@@ -12,8 +12,8 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
       throw new Error('Error: You must run Chrome with the "WebMCP for testing" flag enabled.');
     }
     if (action == 'LIST_TOOLS') {
-      listTools(fromOrigins);
-      document.modelContext.ontoolchange = listTools.bind(null, fromOrigins);
+      debouncedListTools(fromOrigins);
+      document.modelContext.ontoolchange = debouncedListTools.bind(null, fromOrigins);
     }
     if (action == 'EXECUTE_TOOL') {
       if (location && location !== window.location.href) return;
@@ -32,6 +32,7 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
         .getTools()
         .then((tools) => {
           const tool = tools.find((t) => t.name === name && t.window === window);
+          if (!tool) throw new Error('NO_TOOL_FOUND');
           return document.modelContext.executeTool(tool, inputArgs);
         })
         .then(async (result) => {
@@ -46,7 +47,9 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
           }
           reply(result);
         })
-        .catch(({ message }) => reply(JSON.stringify(message)));
+        .catch(({ message }) => {
+          if (message !== 'NO_TOOL_FOUND') reply(JSON.stringify(message));
+        });
       return true;
     }
     if (action == 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT') {
@@ -58,6 +61,12 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
     chrome.runtime.sendMessage({ message });
   }
 });
+
+let timeout;
+function debouncedListTools(fromOrigins) {
+  clearTimeout(timeout);
+  timeout = setTimeout(() => listTools(fromOrigins), 100);
+}
 
 async function listTools(fromOrigins) {
   let tools = [];
@@ -81,10 +90,11 @@ async function listTools(fromOrigins) {
   chrome.runtime.sendMessage({ tools, url: window.location.href });
 }
 
-function getLocation(crossOriginIframeWindow) {
+async function getLocation(crossOriginIframeWindow) {
+  await chrome.runtime.sendMessage({ action: 'INJECT_GET_LOCATION_LISTENER' });
   const promise = new Promise((resolve) => {
-    const listener = ({ data }) => {
-      if (data.action === 'GET_LOCATION_RESPONSE') {
+    const listener = ({ source, data }) => {
+      if (source == crossOriginIframeWindow && data.action === 'GET_LOCATION_RESPONSE') {
         window.removeEventListener('message', listener);
         resolve(data.location);
       }
@@ -94,13 +104,6 @@ function getLocation(crossOriginIframeWindow) {
   crossOriginIframeWindow.postMessage({ action: 'GET_LOCATION' }, '*');
   return promise;
 }
-
-window.addEventListener('message', ({ data, origin, source }) => {
-  if (data.action === 'GET_LOCATION') {
-    const location = window.location.href;
-    source.postMessage({ action: 'GET_LOCATION_RESPONSE', location }, origin);
-  }
-});
 
 window.addEventListener('toolactivated', ({ toolName }) => {
   console.debug(`[WebMCP] Tool "${toolName}" started execution.`);

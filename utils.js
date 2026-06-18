@@ -3,12 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-async function getIframeOrigins(tabId) {
+async function getAllFrameOrigins(tabId) {
   const frames = await chrome.webNavigation.getAllFrames({ tabId });
-
-  // Extract origins, ignoring the top-level frame (frameId === 0)
   const origins = frames
-    .filter((frame) => frame.frameId !== 0)
     .map((frame) => {
       try {
         return new URL(frame.url).origin;
@@ -21,4 +18,4 @@ async function getIframeOrigins(tabId) {
   return [...new Set(origins)];
 }
 
-export { getIframeOrigins };
+export { getAllFrameOrigins };

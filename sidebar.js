@@ -4,7 +4,7 @@
  */
 
 import { GoogleGenAI } from './js-genai.js';
-import { getIframeOrigins } from './utils.js';
+import { getAllFrameOrigins } from './utils.js';
 
 const statusDiv = document.getElementById('status');
 const tbody = document.getElementById('tableBody');
@@ -29,7 +29,7 @@ const suggestUserPromptCheckbox = document.getElementById('suggestUserPromptChec
 (async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const fromOrigins = await getIframeOrigins(tab.id);
+    const fromOrigins = await getAllFrameOrigins(tab.id);
     await chrome.tabs.sendMessage(tab.id, { action: 'LIST_TOOLS', fromOrigins }, { frameId: 0 });
   } catch (error) {
     const statusDiv = document.getElementById('status');
@@ -330,13 +330,10 @@ executeBtn.onclick = async () => {
 };
 
 async function executeTool(tab, name, inputArgs, location) {
-  // Target the main frame if no location is specified or it matches the top-level URL
-  const options = !location || location === tab.url ? { frameId: 0 } : {};
   try {
     const result = await chrome.tabs.sendMessage(
       tab.id,
       { action: 'EXECUTE_TOOL', name, inputArgs, location },
-      options,
     );
     if (result !== null) return result;
   } catch (error) {
