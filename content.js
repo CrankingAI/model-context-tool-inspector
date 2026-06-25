@@ -5,21 +5,15 @@
 
 console.debug(`[WebMCP] Content script injected in ${window.location.href}`);
 
-const modelContext = document.modelContext || navigator.modelContext;
-
 chrome.runtime.onMessage.addListener((message, _, reply) => {
   const { action, name, inputArgs, location, fromOrigins } = message;
   try {
-    if (!navigator.modelContextTesting && !modelContext) {
+    if (!document.modelContext) {
       throw new Error('Error: You must run Chrome with the "WebMCP for testing" flag enabled.');
     }
     if (action == 'LIST_TOOLS') {
       listTools(fromOrigins);
-      if ('ontoolchange' in modelContext) {
-        modelContext.addEventListener('toolchange', listTools.bind(null, fromOrigins));
-        return;
-      }
-      navigator.modelContextTesting.addEventListener('toolchange', listTools);
+      document.modelContext.ontoolchange = listTools.bind(null, fromOrigins);
     }
     if (action == 'EXECUTE_TOOL') {
       if (location && location !== window.location.href) return;
@@ -34,16 +28,12 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
         });
       }
       // Execute the experimental tool
-      let promise;
-      if ('executeTool' in modelContext) {
-        promise = modelContext.getTools().then((tools) => {
+      document.modelContext
+        .getTools()
+        .then((tools) => {
           const tool = tools.find((t) => t.name === name && t.window === window);
-          return modelContext.executeTool(tool, inputArgs);
-        });
-      } else {
-        promise = navigator.modelContextTesting.executeTool(name, inputArgs);
-      }
-      promise
+          return document.modelContext.executeTool(tool, inputArgs);
+        })
         .then(async (result) => {
           // If result is null and we have a target frame, wait for the frame to reload.
           if (result === null && targetFrame) {
@@ -71,25 +61,21 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
 
 async function listTools(fromOrigins) {
   let tools = [];
-  if ('getTools' in modelContext) {
-    for (const tool of await modelContext.getTools({ fromOrigins })) {
-      let location;
-      try {
-        location = tool.window.location.href;
-      } catch {
-        location = await getLocation(tool.window);
-      }
-      tools.push({
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-        readOnlyHint: tool.annotations?.readOnlyHint ? '✓' : undefined,
-        untrustedContentHint: tool.annotations?.untrustedContentHint ? '✓' : undefined,
-        name: tool.name,
-        location,
-      });
+  for (const tool of await document.modelContext.getTools({ fromOrigins })) {
+    let location;
+    try {
+      location = tool.window.location.href;
+    } catch {
+      location = await getLocation(tool.window);
     }
-  } else {
-    tools = navigator.modelContextTesting.listTools();
+    tools.push({
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+      readOnlyHint: tool.annotations?.readOnlyHint ? '✓' : undefined,
+      untrustedContentHint: tool.annotations?.untrustedContentHint ? '✓' : undefined,
+      name: tool.name,
+      location,
+    });
   }
   console.debug(`[WebMCP] Got ${tools.length} tools`, tools);
   chrome.runtime.sendMessage({ tools, url: window.location.href });
