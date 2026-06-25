@@ -1,10 +1,10 @@
 # WebMCP - Model Context Tool Inspector
 
-A Chrome Extension that allows developers to inspect, monitor, and execute tools exposed via the experimental `navigator.modelContextTesting` Web API.
+A Chrome Extension that allows developers to inspect, monitor, and execute WebMCP tools manually or with Gemini.
 
 ## Prerequisites
 
-**Important:** This extension relies on the experimental `navigator.modelContextTesting` Web API. You must enable the "WebMCP for testing" flag in `chrome://flags` to turn it on in Chrome 148.0.7778.56 or higher.
+**Important:**  You must enable the "WebMCP for testing" flag in `chrome://flags` to turn it on in Chrome 150.0.7861.0 or higher.
 
 ## Installation
 
