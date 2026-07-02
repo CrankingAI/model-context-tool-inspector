@@ -38,29 +38,32 @@ async function updateBadge(tabId) {
   });
 }
 
-chrome.runtime.onMessage.addListener(async ({ action, tools }, { tab, origin }, sendResponse) => {
-  if (action == 'INJECT_GET_LOCATION_LISTENER') {
-    await chrome.scripting.executeScript({
+chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendResponse) => {
+  if (action == 'INJECT_GET_FRAME_ID') {
+    chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
-      func: getLocation,
+      func: getFrameId,
     });
     return;
   }
-  if (action == 'GET_LOCATION') {
-    sendResponse(origin);
+  if (action == 'GET_FRAME_ID') {
+    sendResponse(frameId);
     return;
   }
   const text = tools?.length ? `${tools.length}` : '';
   chrome.action.setBadgeText({ text, tabId: tab.id });
 });
 
-// Listen for location requests from an embedded frame and sends it back.
-function getLocation() {
-  if (window == window.top) return;
+// Listen for frameId requests from a window and sends it back.
+function getFrameId() {
   window.onmessage = async ({ data, source, origin }) => {
-    if (data.action === 'GET_LOCATION') {
-      const location = await chrome.runtime.sendMessage({ action: 'GET_LOCATION' });
-      source.postMessage({ action: 'GET_LOCATION_RESPONSE', location }, origin);
+    if (data.action !== 'GET_FRAME_ID') return;
+    for (let i = 0; i < 10; i++) {
+      const frameId = await chrome.runtime.sendMessage({ action: 'GET_FRAME_ID' });
+      if (frameId != null) {
+        return source.postMessage({ action: 'GET_FRAME_ID_RESPONSE', frameId }, origin);
+      }
     }
+    console.debug('[WebMCP] failed to get frameId after 10 attempts');
   };
 }

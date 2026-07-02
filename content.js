@@ -6,7 +6,7 @@
 console.debug(`[WebMCP] Content script injected in ${window.location.href}`);
 
 chrome.runtime.onMessage.addListener((message, _, reply) => {
-  const { action, name, inputArgs, location, fromOrigins } = message;
+  const { action, name, inputArgs, fromOrigins } = message;
   try {
     if (!document.modelContext) {
       throw new Error('Error: You must run Chrome with the "WebMCP for testing" flag enabled.');
@@ -16,8 +16,7 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
       document.modelContext.ontoolchange = debouncedListTools.bind(null, fromOrigins);
     }
     if (action == 'EXECUTE_TOOL') {
-      if (location && location !== window.location.href) return;
-      console.debug(`[WebMCP] Execute tool "${name}" with ${inputArgs} in ${location}`);
+      console.debug(`[WebMCP] Execute tool "${name}" with ${inputArgs} in ${window.location.href}`);
       let targetFrame, loadPromise;
       // Check if this tool is associated with a form target
       const formTarget = document.querySelector(`form[toolname="${name}"]`)?.target;
@@ -32,7 +31,6 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
         .getTools()
         .then((tools) => {
           const tool = tools.find((t) => t.name === name && t.window === window);
-          if (!tool) throw new Error('NO_TOOL_FOUND');
           return document.modelContext.executeTool(tool, inputArgs);
         })
         .then(async (result) => {
@@ -47,14 +45,11 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
           }
           reply(result);
         })
-        .catch(({ message }) => {
-          if (message !== 'NO_TOOL_FOUND') reply(JSON.stringify(message));
-        });
+        .catch(({ message }) => reply(JSON.stringify(message)));
       return true;
     }
     if (action == 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT') {
-      if (location && !window.location.href.startsWith(location)) return;
-      console.debug(`[WebMCP] Get cross document script tool result in ${location}`);
+      console.debug(`[WebMCP] Get cross document script tool result in ${window.location.href}`);
       reply(document.querySelector('script[type="application/ld+json"]')?.textContent);
     }
   } catch ({ message }) {
@@ -71,37 +66,32 @@ function debouncedListTools(fromOrigins) {
 async function listTools(fromOrigins) {
   let tools = [];
   for (const tool of await document.modelContext.getTools({ fromOrigins })) {
-    let location;
-    try {
-      location = tool.window.location.href;
-    } catch {
-      location = await getLocation(tool.window);
-    }
+    const frameId = tool.window == window ? 0 : await getFrameId(tool.window);
     tools.push({
       description: tool.description,
       inputSchema: tool.inputSchema,
       readOnlyHint: tool.annotations?.readOnlyHint ? '✓' : undefined,
       untrustedContentHint: tool.annotations?.untrustedContentHint ? '✓' : undefined,
       name: tool.name,
-      location,
+      frameId,
     });
   }
   console.debug(`[WebMCP] Got ${tools.length} tools`, tools);
   chrome.runtime.sendMessage({ tools, url: window.location.href });
 }
 
-async function getLocation(crossOriginIframeWindow) {
-  await chrome.runtime.sendMessage({ action: 'INJECT_GET_LOCATION_LISTENER' });
+async function getFrameId(targetWindow) {
+  await chrome.runtime.sendMessage({ action: 'INJECT_GET_FRAME_ID' });
   const promise = new Promise((resolve) => {
     const listener = ({ source, data }) => {
-      if (source == crossOriginIframeWindow && data.action === 'GET_LOCATION_RESPONSE') {
+      if (source == targetWindow && data.action === 'GET_FRAME_ID_RESPONSE') {
         window.removeEventListener('message', listener);
-        resolve(data.location);
+        resolve(data.frameId);
       }
     };
     window.addEventListener('message', listener);
   });
-  crossOriginIframeWindow.postMessage({ action: 'GET_LOCATION' }, '*');
+  targetWindow.postMessage({ action: 'GET_FRAME_ID' }, '*');
   return promise;
 }
 
