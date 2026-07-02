@@ -4,7 +4,7 @@
  */
 
 import { GoogleGenAI } from './js-genai.js';
-import { getIframeOrigins } from './utils.js';
+import { getAllFrameOrigins } from './utils.js';
 
 const statusDiv = document.getElementById('status');
 const tbody = document.getElementById('tableBody');
@@ -29,7 +29,7 @@ const suggestUserPromptCheckbox = document.getElementById('suggestUserPromptChec
 (async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const fromOrigins = await getIframeOrigins(tab.id);
+    const fromOrigins = await getAllFrameOrigins(tab.id);
     await chrome.tabs.sendMessage(tab.id, { action: 'LIST_TOOLS', fromOrigins }, { frameId: 0 });
   } catch (error) {
     const statusDiv = document.getElementById('status');
@@ -101,13 +101,10 @@ chrome.runtime.onMessage.addListener(async ({ message, tools, url }, sender) => 
     tbody.appendChild(row);
 
     const option = document.createElement('option');
-    option.textContent = `"${item.name}"`;
+    option.textContent = `"${item.name}"${item.frameId !== 0 ? ` (${item.frameId})` : ''}`;
     option.value = item.name;
-    if (new Set(tools.map((t) => t.location)).size > 1) {
-      option.textContent += ` | ${item.location || ''}`;
-    }
     option.dataset.inputSchema = item.inputSchema || '{}';
-    option.dataset.location = item.location || '';
+    option.dataset.frameId = item.frameId;
     toolNames.appendChild(option);
   });
   updateDefaultValueForInputArgs();
@@ -269,12 +266,12 @@ async function promptAI() {
     } else {
       const toolResponses = [];
       for (const { name: toolName, args } of functionCalls) {
-        const [locationIndex, name] = toolName.split(/_(.*)/s)[1].split(/_(.*)/s);
-        const location = currentTools[locationIndex].location;
+        let [frameId, name] = toolName.split(/_(.*)/s)[1].split(/_(.*)/s);
+        frameId = parseInt(frameId);
         const inputArgs = JSON.stringify(args);
         logPrompt(`AI calling tool "${name}" with ${inputArgs}`);
         try {
-          const result = await executeTool(tab, name, inputArgs, location);
+          const result = await executeTool(tab.id, name, inputArgs, frameId);
           toolResponses.push({ functionResponse: { name: toolName, response: { result } } });
           logPrompt(`Tool "${name}" result: ${result}`);
         } catch (e) {
@@ -323,20 +320,18 @@ executeBtn.onclick = async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const name = toolNames.selectedOptions[0].value;
   const inputArgs = inputArgsText.value;
-  const location = toolNames.selectedOptions[0].dataset.location;
-  toolResults.textContent = await executeTool(tab, name, inputArgs, location).catch(
+  const frameId = parseInt(toolNames.selectedOptions[0].dataset.frameId);
+  toolResults.textContent = await executeTool(tab.id, name, inputArgs, frameId).catch(
     (error) => `⚠️ Error: "${error}"`,
   );
 };
 
-async function executeTool(tab, name, inputArgs, location) {
-  // Target the main frame if no location is specified or it matches the top-level URL
-  const options = !location || location === tab.url ? { frameId: 0 } : {};
+async function executeTool(tabId, name, inputArgs, frameId) {
   try {
     const result = await chrome.tabs.sendMessage(
-      tab.id,
-      { action: 'EXECUTE_TOOL', name, inputArgs, location },
-      options,
+      tabId,
+      { action: 'EXECUTE_TOOL', name, inputArgs },
+      { frameId },
     );
     if (result !== null) return result;
   } catch (error) {
@@ -344,11 +339,12 @@ async function executeTool(tab, name, inputArgs, location) {
   }
   // A navigation was triggered. The result will be on the next document.
   // TODO: Handle case where a new tab is opened.
-  await waitForPageLoad(tab.id);
-  return await chrome.tabs.sendMessage(tab.id, {
-    action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT',
-    location,
-  });
+  await waitForPageLoad(tabId);
+  return await chrome.tabs.sendMessage(
+    tabId,
+    { action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT' },
+    { frameId },
+  );
 }
 
 toolNames.onchange = updateDefaultValueForInputArgs;
@@ -387,9 +383,8 @@ function getConfig() {
   ];
 
   const functionDeclarations = currentTools.map((tool) => {
-    const locationIndex = currentTools.findIndex((t) => t.location === tool.location);
     return {
-      name: `_${locationIndex}_${tool.name}`,
+      name: `_${tool.frameId}_${tool.name}`,
       description: tool.description,
       parametersJsonSchema: tool.inputSchema
         ? JSON.parse(tool.inputSchema)
