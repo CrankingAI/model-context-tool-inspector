@@ -111,7 +111,7 @@ chrome.runtime.onMessage.addListener(async ({ message, tools, url }, sender) => 
     const option = document.createElement('option');
     option.textContent = `"${item.name}"${item.frameId !== 0 ? ` (${item.frameId})` : ''}`;
     option.value = item.name;
-    option.dataset.inputSchema = item.inputSchema || '{}';
+    option.dataset.inputSchema = typeof item.inputSchema === 'object' ? JSON.stringify(item.inputSchema) : (item.inputSchema || '{}');
     option.dataset.frameId = item.frameId;
     toolNames.appendChild(option);
   });
@@ -127,11 +127,12 @@ tbody.ondblclick = () => {
 copyAsScriptToolConfig.onclick = async () => {
   const text = currentTools
     .map((tool) => {
+      const schemaStr = typeof tool.inputSchema === 'string' ? tool.inputSchema : JSON.stringify(tool.inputSchema || { type: 'object', properties: {} });
       return `\
 script_tools {
   name: ${JSON.stringify(tool.name)}
   description: ${JSON.stringify(tool.description || '')}
-  input_schema: ${JSON.stringify(tool.inputSchema || { type: 'object', properties: {} })}
+  input_schema: ${JSON.stringify(schemaStr)}
 }`;
     })
     .join('\r\n');
@@ -143,9 +144,9 @@ copyAsJSON.onclick = async () => {
     return {
       name: tool.name,
       description: tool.description,
-      inputSchema: tool.inputSchema
+      inputSchema: typeof tool.inputSchema === 'string'
         ? JSON.parse(tool.inputSchema)
-        : { type: 'object', properties: {} },
+        : (tool.inputSchema || { type: 'object', properties: {} }),
     };
   });
   await navigator.clipboard.writeText(JSON.stringify(tools, '', '  '));
@@ -452,9 +453,9 @@ function getConfig() {
     return {
       name: `_${tool.frameId}_${tool.name}`,
       description: tool.description,
-      parametersJsonSchema: tool.inputSchema
+      parametersJsonSchema: typeof tool.inputSchema === 'string'
         ? JSON.parse(tool.inputSchema)
-        : { type: 'object', properties: {} },
+        : (tool.inputSchema || { type: 'object', properties: {} }),
     };
   });
   return { systemInstruction, tools: [{ functionDeclarations }] };
