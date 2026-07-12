@@ -28,7 +28,7 @@ chrome.webNavigation.onCompleted.addListener(({ tabId }) => updateBadge(tabId));
 
 async function updateBadge(tabId) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab.id !== tabId) return;
+  if (tab?.id !== tabId) return;
   chrome.action.setBadgeText({ text: '', tabId });
   chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
   const fromOrigins = await getAllFrameOrigins(tab.id);
@@ -40,7 +40,7 @@ async function updateBadge(tabId) {
 
 chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendResponse) => {
   if (action == 'INJECT_GET_FRAME_ID') {
-    chrome.scripting.executeScript({
+    tab?.id && chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       func: getFrameId,
     });
@@ -51,7 +51,7 @@ chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendR
     return;
   }
   const text = tools?.length ? `${tools.length}` : '';
-  chrome.action.setBadgeText({ text, tabId: tab.id });
+  tab?.id && chrome.action.setBadgeText({ text, tabId: tab.id });
 });
 
 // Listen for frameId requests from a window and sends it back.

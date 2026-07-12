@@ -6,14 +6,14 @@
 async function getAllFrameOrigins(tabId) {
   const frames = await chrome.webNavigation.getAllFrames({ tabId });
   const origins = frames
-    .map((frame) => {
+    ?.map((frame) => {
       try {
         return new URL(frame.url).origin;
       } catch (e) {
         return 'null';
       }
     })
-    .filter((origin) => origin !== 'null');
+    ?.filter((origin) => origin !== 'null') ?? [];
 
   return [...new Set(origins)];
 }
