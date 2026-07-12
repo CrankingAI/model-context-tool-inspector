@@ -83,13 +83,19 @@ async function listTools(fromOrigins) {
 async function getFrameId(targetWindow) {
   await chrome.runtime.sendMessage({ action: 'INJECT_GET_FRAME_ID' });
   const promise = new Promise((resolve) => {
+    let timeoutId;
     const listener = ({ source, data }) => {
       if (source == targetWindow && data.action === 'GET_FRAME_ID_RESPONSE') {
         window.removeEventListener('message', listener);
+        clearTimeout(timeoutId);
         resolve(data.frameId);
       }
     };
     window.addEventListener('message', listener);
+    timeoutId = setTimeout(() => {
+      window.removeEventListener('message', listener);
+      resolve(null);
+    }, 2000);
   });
   targetWindow.postMessage({ action: 'GET_FRAME_ID' }, '*');
   return promise;

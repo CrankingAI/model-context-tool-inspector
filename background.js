@@ -45,19 +45,21 @@ async function updateBadge(tabId) {
 
 
 chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendResponse) => {
-  if (action == 'INJECT_GET_FRAME_ID') {
-    tab?.id && chrome.scripting.executeScript({
-      target: { tabId: tab.id, allFrames: true },
-      func: getFrameId,
-    });
-    return;
-  }
-  if (action == 'GET_FRAME_ID') {
+  if (action === 'GET_FRAME_ID') {
     sendResponse(frameId);
     return;
   }
-  const text = tools?.length ? `${tools.length}` : '';
-  tab?.id && chrome.action.setBadgeText({ text, tabId: tab.id });
+  if (action === 'INJECT_GET_FRAME_ID' && tab?.id) {
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      func: getFrameId,
+    }).catch(() => {}).finally(sendResponse);
+    return true;
+  }
+  if (tools !== undefined && tab?.id) {
+    const text = tools.length ? `${tools.length}` : '';
+    chrome.action.setBadgeText({ text, tabId: tab.id });
+  }
 });
 
 // Broadcasts a cancellation message to abort the sidebar's navigation wait.
@@ -67,14 +69,15 @@ function cancelReadyWait(tabId) {
 
 // Listen for frameId requests from a window and sends it back.
 function getFrameId() {
-  window.onmessage = async ({ data, source, origin }) => {
+  window.addEventListener('message', async ({ data, source, origin }) => {
     if (data.action !== 'GET_FRAME_ID') return;
     for (let i = 0; i < 10; i++) {
       const frameId = await chrome.runtime.sendMessage({ action: 'GET_FRAME_ID' });
       if (frameId != null) {
         return source.postMessage({ action: 'GET_FRAME_ID_RESPONSE', frameId }, origin);
       }
+      await new Promise(r => setTimeout(r, 100)); // wait 100ms before retrying
     }
     console.debug('[WebMCP] failed to get frameId after 10 attempts');
-  };
+  });
 }
