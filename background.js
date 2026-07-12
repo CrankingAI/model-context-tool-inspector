@@ -23,7 +23,15 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 // Update badge text with the number of tools per tab.
 chrome.tabs.onActivated.addListener(({ tabId }) => updateBadge(tabId));
-chrome.tabs.onUpdated.addListener((tabId) => updateBadge(tabId));
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  updateBadge(tabId);
+  if (changeInfo.status === 'loading') {
+    chrome.runtime.sendMessage({ type: 'cancel-ready-wait', tabId }).catch(() => {});
+  }
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  chrome.runtime.sendMessage({ type: 'cancel-ready-wait', tabId }).catch(() => {});
+});
 chrome.webNavigation.onCompleted.addListener(({ tabId }) => updateBadge(tabId));
 
 async function updateBadge(tabId) {

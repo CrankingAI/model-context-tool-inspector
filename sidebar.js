@@ -288,9 +288,7 @@ async function promptAI() {
         }
       }
 
-      // FIXME: New WebMCP tools may not be discovered if there's a navigation.
-      // An articial timeout is introduced for mitigation but it's not robust enough.
-      await new Promise((r) => setTimeout(r, 500));
+      // Remove artificial timeout. executeTool now guarantees tools are refreshed if a navigation occurs.
 
       const sendMessageParams = { message: toolResponses, config: getConfig() };
       trace.push({ userPrompt: sendMessageParams });
@@ -345,12 +343,63 @@ async function executeTool(tabId, name, inputArgs, frameId) {
   }
   // A navigation was triggered. The result will be on the next document.
   // TODO: Handle case where a new tab is opened.
-  await waitForPageLoad(tabId);
-  return await chrome.tabs.sendMessage(
-    tabId,
-    { action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT' },
-    { frameId },
-  );
+
+  let toolsReady, toolsError;
+  const toolsPromise = new Promise((resolve, reject) => { 
+    toolsReady = resolve; 
+    toolsError = reject;
+  });
+
+  const listener = (msg, sender) => {
+    if (msg.tools && sender.tab?.id === tabId) {
+      toolsReady();
+    }
+  };
+  chrome.runtime.onMessage.addListener(listener);
+
+  const cancelListener = (msg) => {
+    if (msg.type === 'cancel-ready-wait' && msg.tabId === tabId) {
+      toolsError(new Error('Tab navigated'));
+    }
+  };
+  chrome.runtime.onMessage.addListener(cancelListener);
+
+  let port;
+  try {
+    await waitForPageLoad(tabId);
+    
+    port = chrome.tabs.connect(tabId, { name: 'tools-ready-ping' });
+    port.onDisconnect.addListener(() => {
+      if (chrome.runtime.lastError) {
+        toolsError(new Error(`Content script died: ${chrome.runtime.lastError.message}`));
+      } else {
+        toolsError(new Error('Content script died'));
+      }
+    });
+
+    const result = await chrome.tabs.sendMessage(
+      tabId,
+      { action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT' },
+      { frameId },
+    );
+
+    // Wait for the new page's tools to arrive using defense in depth
+    await Promise.race([
+      toolsPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Ready signal timeout')), 2000))
+    ]);
+    return result;
+  } catch (err) {
+    if (err.message === 'Tab navigated') {
+      console.warn('Tool execution interrupted by further navigation.');
+      return undefined;
+    }
+    throw err;
+  } finally {
+    chrome.runtime.onMessage.removeListener(listener);
+    chrome.runtime.onMessage.removeListener(cancelListener);
+    if (port) port.disconnect();
+  }
 }
 
 toolNames.onchange = updateDefaultValueForInputArgs;
@@ -511,13 +560,30 @@ function generateTemplateFromSchema(schema) {
 
 function waitForPageLoad(tabId) {
   return new Promise((resolve) => {
-    const listener = (updatedTabId, changeInfo) => {
-      if (updatedTabId === tabId && changeInfo.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab.status === 'complete') {
         resolve();
+        return;
       }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
+
+      let timeoutId;
+      const listener = (updatedTabId, changeInfo) => {
+        if (updatedTabId === tabId && changeInfo.status === 'complete') {
+          clearTimeout(timeoutId);
+          chrome.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
+      };
+      
+      timeoutId = setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve(); // resolve rather than reject to avoid crashing the AI loop
+      }, 5000);
+
+      chrome.tabs.onUpdated.addListener(listener);
+    }).catch(() => resolve()); // Safe fallback if tab query fails
+  });
+}
   });
 }
 
