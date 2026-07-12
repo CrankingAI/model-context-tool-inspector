@@ -23,15 +23,12 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 // Update badge text with the number of tools per tab.
 chrome.tabs.onActivated.addListener(({ tabId }) => updateBadge(tabId));
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   updateBadge(tabId);
-  if (changeInfo.status === 'loading') {
-    chrome.runtime.sendMessage({ type: 'cancel-ready-wait', tabId }).catch(() => {});
-  }
+  if (changeInfo.status === 'loading') cancelReadyWait(tabId);
 });
-chrome.tabs.onRemoved.addListener((tabId) => {
-  chrome.runtime.sendMessage({ type: 'cancel-ready-wait', tabId }).catch(() => {});
-});
+chrome.tabs.onRemoved.addListener(cancelReadyWait);
 chrome.webNavigation.onCompleted.addListener(({ tabId }) => updateBadge(tabId));
 
 async function updateBadge(tabId) {
@@ -45,6 +42,7 @@ async function updateBadge(tabId) {
     chrome.runtime.sendMessage({ message });
   });
 }
+
 
 chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendResponse) => {
   if (action == 'INJECT_GET_FRAME_ID') {
@@ -61,6 +59,11 @@ chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendR
   const text = tools?.length ? `${tools.length}` : '';
   tab?.id && chrome.action.setBadgeText({ text, tabId: tab.id });
 });
+
+// Broadcasts a cancellation message to abort the sidebar's navigation wait.
+function cancelReadyWait(tabId) {
+  chrome.runtime.sendMessage({ type: 'cancel-ready-wait', tabId }).catch(() => {});
+}
 
 // Listen for frameId requests from a window and sends it back.
 function getFrameId() {

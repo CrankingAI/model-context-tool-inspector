@@ -288,8 +288,6 @@ async function promptAI() {
         }
       }
 
-      // Remove artificial timeout. executeTool now guarantees tools are refreshed if a navigation occurs.
-
       const sendMessageParams = { message: toolResponses, config: getConfig() };
       trace.push({ userPrompt: sendMessageParams });
       currentResult = await chat.sendMessage(sendMessageParams);
@@ -331,34 +329,31 @@ executeBtn.onclick = async () => {
 };
 
 async function executeTool(tabId, name, inputArgs, frameId) {
-  try {
-    const result = await chrome.tabs.sendMessage(
-      tabId,
-      { action: 'EXECUTE_TOOL', name, inputArgs },
-      { frameId },
-    );
-    if (result !== null) return result;
-  } catch (error) {
-    if (!error.message.includes('message channel is closed')) throw error;
-  }
-  // A navigation was triggered. The result will be on the next document.
-  // TODO: Handle case where a new tab is opened.
-
   let toolsReady, toolsError;
   const toolsPromise = new Promise((resolve, reject) => { 
     toolsReady = resolve; 
     toolsError = reject;
   });
 
+  let targetTabId = tabId;
+  let contentScriptReadyResolve;
+  const contentScriptReadyPromise = new Promise((r) => { contentScriptReadyResolve = r; });
+
   const listener = (msg, sender) => {
-    if (msg.tools && sender.tab?.id === tabId) {
+    if (msg.type === 'contentScriptReady' && sender.tab) {
+      if (sender.tab.id === tabId || sender.tab.openerTabId === tabId) {
+        targetTabId = sender.tab.id;
+        contentScriptReadyResolve();
+      }
+    }
+    if (msg.tools && sender.tab?.id === targetTabId) {
       toolsReady();
     }
   };
   chrome.runtime.onMessage.addListener(listener);
 
   const cancelListener = (msg) => {
-    if (msg.type === 'cancel-ready-wait' && msg.tabId === tabId) {
+    if (msg.type === 'cancel-ready-wait' && msg.tabId === targetTabId) {
       toolsError(new Error('Tab navigated'));
     }
   };
@@ -366,10 +361,9 @@ async function executeTool(tabId, name, inputArgs, frameId) {
 
   let port;
   try {
-    await waitForPageLoad(tabId);
-    
     port = chrome.tabs.connect(tabId, { name: 'tools-ready-ping' });
     port.onDisconnect.addListener(() => {
+      if (targetTabId !== tabId) return;
       if (chrome.runtime.lastError) {
         toolsError(new Error(`Content script died: ${chrome.runtime.lastError.message}`));
       } else {
@@ -377,18 +371,35 @@ async function executeTool(tabId, name, inputArgs, frameId) {
       }
     });
 
-    const result = await chrome.tabs.sendMessage(
-      tabId,
+    try {
+      const result = await chrome.tabs.sendMessage(
+        tabId,
+        { action: 'EXECUTE_TOOL', name, inputArgs },
+        { frameId },
+      );
+      if (result !== null) return result;
+    } catch (error) {
+      if (!error.message.includes('message channel is closed')) throw error;
+    }
+
+    // A navigation was triggered. The result will be on the next document.
+    await Promise.race([
+      contentScriptReadyPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Ready signal timeout')), 2000))
+    ]);
+
+    await Promise.race([
+      toolsPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Tools broadcast timeout')), 2000))
+    ]);
+
+    await waitForPageLoad(targetTabId);
+
+    return await chrome.tabs.sendMessage(
+      targetTabId,
       { action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT' },
       { frameId },
     );
-
-    // Wait for the new page's tools to arrive using defense in depth
-    await Promise.race([
-      toolsPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Ready signal timeout')), 2000))
-    ]);
-    return result;
   } catch (err) {
     if (err.message === 'Tab navigated') {
       console.warn('Tool execution interrupted by further navigation.');

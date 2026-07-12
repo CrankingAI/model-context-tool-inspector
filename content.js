@@ -102,3 +102,7 @@ window.addEventListener('toolactivated', ({ toolName }) => {
 window.addEventListener('toolcancel', ({ toolName }) => {
   console.debug(`[WebMCP] Tool "${toolName}" execution is cancelled.`);
 });
+
+if (window === window.top) {
+  chrome.runtime.sendMessage({ type: 'contentScriptReady' }).catch(() => {});
+}
