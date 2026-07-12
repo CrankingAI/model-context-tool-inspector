@@ -64,7 +64,12 @@ chrome.runtime.onMessage.addListener(async ({ message, tools, url }, sender) => 
 
   if (!tools || tools.length === 0) {
     const row = document.createElement('tr');
-    row.innerHTML = `<td colspan="100%"><i>No tools registered yet in ${url || tab.url}</i></td>`;
+    const td = document.createElement('td');
+    td.setAttribute('colspan', '100%');
+    const i = document.createElement('i');
+    i.textContent = `No tools registered yet in ${url || tab.url}`;
+    td.appendChild(i);
+    row.appendChild(td);
     tbody.appendChild(row);
     inputArgsText.value = '';
     inputArgsText.disabled = true;
@@ -91,10 +96,13 @@ chrome.runtime.onMessage.addListener(async ({ message, tools, url }, sender) => 
     const row = document.createElement('tr');
     keys.forEach((key) => {
       const td = document.createElement('td');
+      const pre = document.createElement('pre');
       try {
-        td.innerHTML = `<pre>${JSON.stringify(JSON.parse(item[key]), '', '  ')}</pre>`;
+        const parsed = typeof item[key] === 'string' ? JSON.parse(item[key]) : item[key];
+        pre.textContent = JSON.stringify(parsed, null, '  ');
+        td.appendChild(pre);
       } catch (error) {
-        td.textContent = item[key];
+        td.textContent = typeof item[key] === 'object' ? JSON.stringify(item[key]) : item[key];
       }
       row.appendChild(td);
     });
@@ -121,8 +129,8 @@ copyAsScriptToolConfig.onclick = async () => {
     .map((tool) => {
       return `\
 script_tools {
-  name: "${tool.name}"
-  description: "${tool.description}"
+  name: ${JSON.stringify(tool.name)}
+  description: ${JSON.stringify(tool.description || '')}
   input_schema: ${JSON.stringify(tool.inputSchema || { type: 'object', properties: {} })}
 }`;
     })
@@ -147,13 +155,11 @@ copyAsJSON.onclick = async () => {
 
 let genAI, chat;
 
-const envModulePromise = import('./.env.json', { with: { type: 'json' } });
-
 async function initGenAI() {
   let env;
   try {
     // Try load .env.json if present.
-    env = (await envModulePromise).default;
+    env = (await import('./.env.json', { with: { type: 'json' } })).default;
   } catch {}
   if (env?.apiKey) localStorage.apiKey ??= env.apiKey;
   if (localStorage.model === 'gemini-2.5-flash') {
