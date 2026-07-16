@@ -1,2 +1,5 @@
 .env.json
 js-genai.js
+test/node_modules
+test/.cache
+test/.profile
