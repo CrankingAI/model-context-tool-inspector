@@ -21,7 +21,11 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
       // Check if this tool is associated with a form target
       const formTarget = document.querySelector(`form[toolname="${name}"]`)?.target;
       if (formTarget) {
+        // May be null, e.g. for target="_blank"; the result then lives in a
+        // new tab and the sidebar retrieves it from there.
         targetFrame = document.querySelector(`[name=${formTarget}]`);
+      }
+      if (targetFrame) {
         loadPromise = new Promise((resolve) => {
           targetFrame.addEventListener('load', resolve, { once: true });
         });

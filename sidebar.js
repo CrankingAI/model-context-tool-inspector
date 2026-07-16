@@ -45,7 +45,9 @@ let userPromptPendingId = 0;
 let lastSuggestedUserPrompt = '';
 
 // Listen for the results coming back from content.js
-chrome.runtime.onMessage.addListener(async ({ message, tools, url }, sender) => {
+chrome.runtime.onMessage.addListener(async ({ message, tools, url, type }, sender) => {
+  // Internal signals (e.g. contentScriptReady) are handled elsewhere.
+  if (type) return;
   if (sender.frameId && sender.frameId !== 0) return;
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -330,10 +332,9 @@ executeBtn.onclick = async () => {
 };
 
 async function executeTool(tabId, name, inputArgs, frameId) {
-  let toolsReady, toolsError;
-  const toolsPromise = new Promise((resolve, reject) => { 
-    toolsReady = resolve; 
-    toolsError = reject;
+  let toolsReady;
+  const toolsPromise = new Promise((resolve) => {
+    toolsReady = resolve;
   });
 
   let targetTabId = tabId;
@@ -353,25 +354,7 @@ async function executeTool(tabId, name, inputArgs, frameId) {
   };
   chrome.runtime.onMessage.addListener(listener);
 
-  const cancelListener = (msg) => {
-    if (msg.type === 'cancel-ready-wait' && msg.tabId === targetTabId) {
-      toolsError(new Error('Tab navigated'));
-    }
-  };
-  chrome.runtime.onMessage.addListener(cancelListener);
-
-  let port;
   try {
-    port = chrome.tabs.connect(tabId, { name: 'tools-ready-ping' });
-    port.onDisconnect.addListener(() => {
-      if (targetTabId !== tabId) return;
-      if (chrome.runtime.lastError) {
-        toolsError(new Error(`Content script died: ${chrome.runtime.lastError.message}`));
-      } else {
-        toolsError(new Error('Content script died'));
-      }
-    });
-
     try {
       const result = await chrome.tabs.sendMessage(
         tabId,
@@ -380,18 +363,21 @@ async function executeTool(tabId, name, inputArgs, frameId) {
       );
       if (result !== null) return result;
     } catch (error) {
-      if (!error.message.includes('message channel is closed')) throw error;
+      // "message channel closed" / "message port closed" depending on the
+      // Chrome version and whether a listener replied asynchronously.
+      if (!/message (channel|port) closed/.test(error.message)) throw error;
     }
 
-    // A navigation was triggered. The result will be on the next document.
+    // A navigation was triggered. The result will be on the next document,
+    // which may live in a new tab if the tool opened one.
     await Promise.race([
       contentScriptReadyPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Ready signal timeout')), 2000))
+      new Promise((r) => setTimeout(r, 2000)),
     ]);
 
     await Promise.race([
       toolsPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Tools broadcast timeout')), 2000))
+      new Promise((r) => setTimeout(r, 2000)),
     ]);
 
     await waitForPageLoad(targetTabId);
@@ -399,18 +385,11 @@ async function executeTool(tabId, name, inputArgs, frameId) {
     return await chrome.tabs.sendMessage(
       targetTabId,
       { action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT' },
-      { frameId },
+      // The original frameId only makes sense in the original tab.
+      { frameId: targetTabId === tabId ? frameId : 0 },
     );
-  } catch (err) {
-    if (err.message === 'Tab navigated') {
-      console.warn('Tool execution interrupted by further navigation.');
-      return undefined;
-    }
-    throw err;
   } finally {
     chrome.runtime.onMessage.removeListener(listener);
-    chrome.runtime.onMessage.removeListener(cancelListener);
-    if (port) port.disconnect();
   }
 }
 
@@ -572,30 +551,24 @@ function generateTemplateFromSchema(schema) {
 
 function waitForPageLoad(tabId) {
   return new Promise((resolve) => {
+    let timeoutId;
+    const done = () => {
+      clearTimeout(timeoutId);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
+    };
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') done();
+    };
+
+    timeoutId = setTimeout(done, 5000); // resolve rather than reject to avoid crashing the AI loop
+    chrome.tabs.onUpdated.addListener(listener);
+
+    // The tab may already be done loading, or gone; don't wait on the
+    // timeout for those.
     chrome.tabs.get(tabId).then((tab) => {
-      if (tab.status === 'complete') {
-        resolve();
-        return;
-      }
-
-      let timeoutId;
-      const listener = (updatedTabId, changeInfo) => {
-        if (updatedTabId === tabId && changeInfo.status === 'complete') {
-          clearTimeout(timeoutId);
-          chrome.tabs.onUpdated.removeListener(listener);
-          resolve();
-        }
-      };
-      
-      timeoutId = setTimeout(() => {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve(); // resolve rather than reject to avoid crashing the AI loop
-      }, 5000);
-
-      chrome.tabs.onUpdated.addListener(listener);
-    }).catch(() => resolve()); // Safe fallback if tab query fails
-  });
-}
+      if (tab.status === 'complete') done();
+    }).catch(done);
   });
 }
 
