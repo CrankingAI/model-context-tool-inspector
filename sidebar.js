@@ -66,12 +66,7 @@ chrome.runtime.onMessage.addListener(async ({ message, tools, url, type }, sende
 
   if (!tools || tools.length === 0) {
     const row = document.createElement('tr');
-    const td = document.createElement('td');
-    td.setAttribute('colspan', '100%');
-    const i = document.createElement('i');
-    i.textContent = `No tools registered yet in ${url || tab.url}`;
-    td.appendChild(i);
-    row.appendChild(td);
+    row.innerHTML = `<td colspan="100%"><i>No tools registered yet in ${url || tab.url}</i></td>`;
     tbody.appendChild(row);
     inputArgsText.value = '';
     inputArgsText.disabled = true;
@@ -100,11 +95,10 @@ chrome.runtime.onMessage.addListener(async ({ message, tools, url, type }, sende
       const td = document.createElement('td');
       const pre = document.createElement('pre');
       try {
-        const parsed = typeof item[key] === 'string' ? JSON.parse(item[key]) : item[key];
-        pre.textContent = JSON.stringify(parsed, null, '  ');
+        pre.textContent = JSON.stringify(JSON.parse(item[key]), '', '  ');
         td.appendChild(pre);
       } catch (error) {
-        td.textContent = typeof item[key] === 'object' ? JSON.stringify(item[key]) : item[key];
+        td.textContent = item[key];
       }
       row.appendChild(td);
     });
@@ -113,7 +107,7 @@ chrome.runtime.onMessage.addListener(async ({ message, tools, url, type }, sende
     const option = document.createElement('option');
     option.textContent = `"${item.name}"${item.frameId !== 0 ? ` (${item.frameId})` : ''}`;
     option.value = item.name;
-    option.dataset.inputSchema = typeof item.inputSchema === 'object' ? JSON.stringify(item.inputSchema) : (item.inputSchema || '{}');
+    option.dataset.inputSchema = item.inputSchema || '{}';
     option.dataset.frameId = item.frameId;
     toolNames.appendChild(option);
   });
@@ -129,12 +123,11 @@ tbody.ondblclick = () => {
 copyAsScriptToolConfig.onclick = async () => {
   const text = currentTools
     .map((tool) => {
-      const schemaStr = typeof tool.inputSchema === 'string' ? tool.inputSchema : JSON.stringify(tool.inputSchema || { type: 'object', properties: {} });
       return `\
 script_tools {
   name: ${JSON.stringify(tool.name)}
   description: ${JSON.stringify(tool.description || '')}
-  input_schema: ${JSON.stringify(schemaStr)}
+  input_schema: ${JSON.stringify(tool.inputSchema || { type: 'object', properties: {} })}
 }`;
     })
     .join('\r\n');
@@ -146,9 +139,9 @@ copyAsJSON.onclick = async () => {
     return {
       name: tool.name,
       description: tool.description,
-      inputSchema: typeof tool.inputSchema === 'string'
+      inputSchema: tool.inputSchema
         ? JSON.parse(tool.inputSchema)
-        : (tool.inputSchema || { type: 'object', properties: {} }),
+        : { type: 'object', properties: {} },
     };
   });
   await navigator.clipboard.writeText(JSON.stringify(tools, '', '  '));
@@ -363,9 +356,7 @@ async function executeTool(tabId, name, inputArgs, frameId) {
       );
       if (result !== null) return result;
     } catch (error) {
-      // "message channel closed" / "message port closed" depending on the
-      // Chrome version and whether a listener replied asynchronously.
-      if (!/message (channel|port) closed/.test(error.message)) throw error;
+      if (!/message channel (is )?closed/.test(error.message)) throw error;
     }
 
     // A navigation was triggered. The result will be on the next document,
@@ -432,9 +423,9 @@ function getConfig() {
     return {
       name: `_${tool.frameId}_${tool.name}`,
       description: tool.description,
-      parametersJsonSchema: typeof tool.inputSchema === 'string'
+      parametersJsonSchema: tool.inputSchema
         ? JSON.parse(tool.inputSchema)
-        : (tool.inputSchema || { type: 'object', properties: {} }),
+        : { type: 'object', properties: {} },
     };
   });
   return { systemInstruction, tools: [{ functionDeclarations }] };
