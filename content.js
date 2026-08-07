@@ -21,7 +21,11 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
       // Check if this tool is associated with a form target
       const formTarget = document.querySelector(`form[toolname="${name}"]`)?.target;
       if (formTarget) {
+        // May be null, e.g. for target="_blank"; the result then lives in a
+        // new tab and the sidebar retrieves it from there.
         targetFrame = document.querySelector(`[name=${formTarget}]`);
+      }
+      if (targetFrame) {
         loadPromise = new Promise((resolve) => {
           targetFrame.addEventListener('load', resolve, { once: true });
         });
@@ -83,13 +87,19 @@ async function listTools(fromOrigins) {
 async function getFrameId(targetWindow) {
   await chrome.runtime.sendMessage({ action: 'INJECT_GET_FRAME_ID' });
   const promise = new Promise((resolve) => {
+    let timeoutId;
     const listener = ({ source, data }) => {
       if (source == targetWindow && data.action === 'GET_FRAME_ID_RESPONSE') {
         window.removeEventListener('message', listener);
+        clearTimeout(timeoutId);
         resolve(data.frameId);
       }
     };
     window.addEventListener('message', listener);
+    timeoutId = setTimeout(() => {
+      window.removeEventListener('message', listener);
+      resolve(null);
+    }, 2000);
   });
   targetWindow.postMessage({ action: 'GET_FRAME_ID' }, '*');
   return promise;
@@ -102,3 +112,7 @@ window.addEventListener('toolactivated', ({ toolName }) => {
 window.addEventListener('toolcancel', ({ toolName }) => {
   console.debug(`[WebMCP] Tool "${toolName}" execution is cancelled.`);
 });
+
+if (window === window.top) {
+  chrome.runtime.sendMessage({ type: 'contentScriptReady' }).catch(() => {});
+}

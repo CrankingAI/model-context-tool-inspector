@@ -45,7 +45,9 @@ let userPromptPendingId = 0;
 let lastSuggestedUserPrompt = '';
 
 // Listen for the results coming back from content.js
-chrome.runtime.onMessage.addListener(async ({ message, tools, url }, sender) => {
+chrome.runtime.onMessage.addListener(async ({ message, tools, url, type }, sender) => {
+  // Internal signals (e.g. contentScriptReady) are handled elsewhere.
+  if (type) return;
   if (sender.frameId && sender.frameId !== 0) return;
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -91,8 +93,10 @@ chrome.runtime.onMessage.addListener(async ({ message, tools, url }, sender) => 
     const row = document.createElement('tr');
     keys.forEach((key) => {
       const td = document.createElement('td');
+      const pre = document.createElement('pre');
       try {
-        td.innerHTML = `<pre>${JSON.stringify(JSON.parse(item[key]), '', '  ')}</pre>`;
+        pre.textContent = JSON.stringify(JSON.parse(item[key]), '', '  ');
+        td.appendChild(pre);
       } catch (error) {
         td.textContent = item[key];
       }
@@ -121,8 +125,8 @@ copyAsScriptToolConfig.onclick = async () => {
     .map((tool) => {
       return `\
 script_tools {
-  name: "${tool.name}"
-  description: "${tool.description}"
+  name: ${JSON.stringify(tool.name)}
+  description: ${JSON.stringify(tool.description || '')}
   input_schema: ${JSON.stringify(tool.inputSchema || { type: 'object', properties: {} })}
 }`;
     })
@@ -147,13 +151,11 @@ copyAsJSON.onclick = async () => {
 
 let genAI, chat;
 
-const envModulePromise = import('./.env.json', { with: { type: 'json' } });
-
 async function initGenAI() {
   let env;
   try {
     // Try load .env.json if present.
-    env = (await envModulePromise).default;
+    env = (await import('./.env.json', { with: { type: 'json' } })).default;
   } catch {}
   if (env?.apiKey) localStorage.apiKey ??= env.apiKey;
   if (localStorage.model === 'gemini-2.5-flash') {
@@ -282,10 +284,6 @@ async function promptAI() {
         }
       }
 
-      // FIXME: New WebMCP tools may not be discovered if there's a navigation.
-      // An articial timeout is introduced for mitigation but it's not robust enough.
-      await new Promise((r) => setTimeout(r, 500));
-
       const sendMessageParams = { message: toolResponses, config: getConfig() };
       trace.push({ userPrompt: sendMessageParams });
       currentResult = await chat.sendMessage(sendMessageParams);
@@ -327,24 +325,63 @@ executeBtn.onclick = async () => {
 };
 
 async function executeTool(tabId, name, inputArgs, frameId) {
+  let toolsReady;
+  const toolsPromise = new Promise((resolve) => {
+    toolsReady = resolve;
+  });
+
+  let targetTabId = tabId;
+  let contentScriptReadyResolve;
+  const contentScriptReadyPromise = new Promise((r) => { contentScriptReadyResolve = r; });
+
+  const listener = (msg, sender) => {
+    if (msg.type === 'contentScriptReady' && sender.tab) {
+      if (sender.tab.id === tabId || sender.tab.openerTabId === tabId) {
+        targetTabId = sender.tab.id;
+        contentScriptReadyResolve();
+      }
+    }
+    if (msg.tools && sender.tab?.id === targetTabId) {
+      toolsReady();
+    }
+  };
+  chrome.runtime.onMessage.addListener(listener);
+
   try {
-    const result = await chrome.tabs.sendMessage(
-      tabId,
-      { action: 'EXECUTE_TOOL', name, inputArgs },
-      { frameId },
+    try {
+      const result = await chrome.tabs.sendMessage(
+        tabId,
+        { action: 'EXECUTE_TOOL', name, inputArgs },
+        { frameId },
+      );
+      if (result !== null) return result;
+    } catch (error) {
+      if (!/message channel (is )?closed/.test(error.message)) throw error;
+    }
+
+    // A navigation was triggered. The result will be on the next document,
+    // which may live in a new tab if the tool opened one.
+    await Promise.race([
+      contentScriptReadyPromise,
+      new Promise((r) => setTimeout(r, 2000)),
+    ]);
+
+    await Promise.race([
+      toolsPromise,
+      new Promise((r) => setTimeout(r, 2000)),
+    ]);
+
+    await waitForPageLoad(targetTabId);
+
+    return await chrome.tabs.sendMessage(
+      targetTabId,
+      { action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT' },
+      // The original frameId only makes sense in the original tab.
+      { frameId: targetTabId === tabId ? frameId : 0 },
     );
-    if (result !== null) return result;
-  } catch (error) {
-    if (!error.message.includes('message channel is closed')) throw error;
+  } finally {
+    chrome.runtime.onMessage.removeListener(listener);
   }
-  // A navigation was triggered. The result will be on the next document.
-  // TODO: Handle case where a new tab is opened.
-  await waitForPageLoad(tabId);
-  return await chrome.tabs.sendMessage(
-    tabId,
-    { action: 'GET_CROSS_DOCUMENT_SCRIPT_TOOL_RESULT' },
-    { frameId },
-  );
 }
 
 toolNames.onchange = updateDefaultValueForInputArgs;
@@ -505,13 +542,24 @@ function generateTemplateFromSchema(schema) {
 
 function waitForPageLoad(tabId) {
   return new Promise((resolve) => {
-    const listener = (updatedTabId, changeInfo) => {
-      if (updatedTabId === tabId && changeInfo.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
+    let timeoutId;
+    const done = () => {
+      clearTimeout(timeoutId);
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve();
     };
+    const listener = (updatedTabId, changeInfo) => {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') done();
+    };
+
+    timeoutId = setTimeout(done, 5000); // resolve rather than reject to avoid crashing the AI loop
     chrome.tabs.onUpdated.addListener(listener);
+
+    // The tab may already be done loading, or gone; don't wait on the
+    // timeout for those.
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab.status === 'complete') done();
+    }).catch(done);
   });
 }
 
