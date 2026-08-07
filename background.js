@@ -39,7 +39,7 @@ async function updateBadge(tabId) {
 }
 
 chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendResponse) => {
-  if (action == 'INJECT_GET_FRAME_ID' && tab?.id) {
+  if (action == 'INJECT_GET_FRAME_ID') {
     chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
       func: getFrameId,
@@ -50,7 +50,7 @@ chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendR
     sendResponse(frameId);
     return;
   }
-  if (tools !== undefined && tab?.id) {
+  if (tools !== undefined) {
     const text = tools.length ? `${tools.length}` : '';
     chrome.action.setBadgeText({ text, tabId: tab.id });
   }
