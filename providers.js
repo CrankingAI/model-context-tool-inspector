@@ -82,13 +82,21 @@ function createGeminiProvider({ apiKey, model }) {
 // /mai/v1 route. (Claude on Foundry uses the Anthropic-native API and is not
 // supported.)
 function createFoundryProvider({ azureEndpoint, azureDeployment, azureApiKey }) {
-  // Accepts a bare resource endpoint (https://myresource.services.ai.azure.com
-  // or https://myresource.openai.azure.com), which gets the OpenAI-compatible
-  // /openai/v1 route, an endpoint that already names a /v1 API route (such as
-  // /mai/v1 for MAI models), or a full …/chat/completions URL.
+  // Accepts the endpoint shapes the Azure portals hand out: a bare resource
+  // endpoint (https://myresource.services.ai.azure.com, …openai.azure.com, or
+  // …cognitiveservices.azure.com), which gets the OpenAI-compatible /openai/v1
+  // route; a Foundry project endpoint (…/api/projects/<name>), which serves
+  // inference at the resource root; an endpoint already naming a /v1 API route
+  // (such as /mai/v1 for MAI models); or a full …/chat/completions URL, kept
+  // verbatim — query string included, so legacy deployment URLs with
+  // ?api-version=… work.
   function chatCompletionsUrl() {
-    let base = azureEndpoint.trim().replace(/\/+$/, '');
-    if (base.endsWith('/chat/completions')) return base;
+    let raw = azureEndpoint.trim();
+    if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
+    const url = new URL(raw);
+    if (url.pathname.replace(/\/+$/, '').endsWith('/chat/completions')) return url.href;
+    let base = (url.origin + url.pathname).replace(/\/+$/, '');
+    base = base.replace(/\/api\/projects\/[^/]+$/, '');
     if (!/\/v1$/.test(base)) base += '/openai/v1';
     return `${base}/chat/completions`;
   }

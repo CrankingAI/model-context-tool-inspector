@@ -314,11 +314,41 @@ check(
   await sidebar.$eval('#promptResults', (el) => el.textContent.includes('Answer: sum is 42')),
 );
 
+async function setFoundryEndpoint(endpoint) {
+  await sidebar.click('#apiKeyBtn');
+  await waitSidebar(() => document.getElementById('credentialsDialog').open);
+  await sidebar.fill('#azureEndpointInput', endpoint);
+  await sidebar.click('#credentialsDialog button[value="save"]');
+  await sidebar.click('#resetBtn'); // clear the prompt log for a fresh wait
+}
+const promptRoundTrip = async (prompt) => {
+  await sidebar.fill('#userPromptText', prompt);
+  await sidebar.click('#promptBtn');
+  await waitSidebar(() => /Answer:|AI result:|⚠️/.test(document.getElementById('promptResults').textContent), 15000);
+};
+
+// A Foundry project endpoint resolves to the resource root's /openai/v1.
+await setFoundryEndpoint(`${BASE}/api/projects/demo-project`);
+await promptRoundTrip('Once more?');
+check('project endpoint uses /openai/v1 route', azureRequests.at(-1)?.url === '/openai/v1/chat/completions', azureRequests.at(-1)?.url);
+
+// A full …/chat/completions URL is used verbatim.
+await setFoundryEndpoint(`${BASE}/mai/v1/chat/completions`);
+await promptRoundTrip('Verbatim?');
+check('full chat/completions URL is used verbatim', azureRequests.at(-1)?.url === '/mai/v1/chat/completions', azureRequests.at(-1)?.url);
+
 // Page without tools shows the empty state
 await demo.bringToFront();
 await demo.goto(`${BASE}/page2.html`);
 await waitSidebar(() => document.body.textContent.includes('No tools registered yet'));
 check('no-tools page shows empty state', true);
+
+// Prompting with no tools listed must still complete rather than crash while
+// building the provider config from an empty tool list.
+await sidebar.click('#resetBtn');
+await promptRoundTrip('Anything here?');
+const noToolsLog = await sidebar.$eval('#promptResults', (el) => el.textContent);
+check('prompting without tools does not crash', !noToolsLog.includes('TypeError'), noToolsLog);
 
 // No console errors or unhandled rejections anywhere
 const relevantErrors = consoleErrors.filter((e) => !e.includes('net::'));

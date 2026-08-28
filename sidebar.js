@@ -469,7 +469,9 @@ function getConfig() {
     'CRITICAL RULE: Do not try to use other tools than the available ones.',
   ];
 
-  const tools = currentTools.map((tool) => {
+  // The tool list can still be empty or unreceived (e.g. the page predates
+  // the extension load); prompting then just runs without tools.
+  const tools = (currentTools ?? []).map((tool) => {
     return {
       name: `_${tool.frameId}_${tool.name}`,
       description: tool.description,

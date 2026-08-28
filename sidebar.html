@@ -103,10 +103,12 @@
               <input type="password" id="azureApiKeyInput" autocomplete="off">
             </label>
             <p class="dialog-hint">
-              Bare endpoints use the OpenAI-compatible <code>/openai/v1</code> route
-              (Azure OpenAI, DeepSeek, Grok, Llama…). For Microsoft MAI models such as
-              MAI-Thinking-1, append <code>/mai/v1</code> to the endpoint. The deployment
-              must support function calling.
+              Bare resource endpoints and Foundry project endpoints
+              (…<code>/api/projects/…</code>) use the OpenAI-compatible
+              <code>/openai/v1</code> route (Azure OpenAI, DeepSeek, Grok, Llama…).
+              For Microsoft MAI models such as MAI-Thinking-1, append
+              <code>/mai/v1</code> to the resource endpoint. The deployment must
+              support function calling.
             </p>
           </div>
           <div class="dialog-buttons">
