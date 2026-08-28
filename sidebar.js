@@ -53,14 +53,20 @@ chrome.runtime.onMessage.addListener(async ({ message, tools, url, type }, sende
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (sender.tab && sender.tab.id !== tab.id) return;
 
-  tbody.innerHTML = '';
-  thead.innerHTML = '';
-  toolNames.innerHTML = '';
+  const haveNewTools = JSON.stringify(currentTools) !== JSON.stringify(tools);
 
   statusDiv.textContent = message;
   statusDiv.hidden = !message;
 
-  const haveNewTools = JSON.stringify(currentTools) !== JSON.stringify(tools);
+  if (!haveNewTools && tools?.length) {
+    // Same tools re-broadcast (e.g. a badge refresh): keep the table and the
+    // user's tool selection / input arguments intact.
+    return;
+  }
+
+  tbody.innerHTML = '';
+  thead.innerHTML = '';
+  toolNames.innerHTML = '';
 
   currentTools = tools;
 
