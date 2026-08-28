@@ -1,4 +1,10 @@
-# WebMCP - Model Context Tool Inspector
+# WebMCP - Model Context Tool Inspector (DevPartners)
+
+> **DevPartners fork.** This is a derivative of the upstream
+> [beaufortfrancois/model-context-tool-inspector](https://github.com/beaufortfrancois/model-context-tool-inspector),
+> extended with multi-provider LLM support (Microsoft Foundry / Azure OpenAI alongside Gemini)
+> and assorted fixes. It is not the Chrome Web Store build; the name, icon, and tooltip carry a
+> DevPartners marker so the two can't be confused when installed side by side.
 
 A Chrome Extension that allows developers to inspect, monitor, and execute WebMCP tools manually or with an LLM (Google Gemini or Microsoft Foundry, including Azure OpenAI).
 
@@ -8,13 +14,9 @@ A Chrome Extension that allows developers to inspect, monitor, and execute WebMC
 
 ## Installation
 
-You can install this extension either directly from the Chrome Web Store or manually from the source code.
+This fork is installed from source. (The [Chrome Web Store listing](https://chromewebstore.google.com/detail/model-context-tool-inspec/gbpdfapgefenggkahomfgkhfehlcenpd) is the upstream original, without this fork's changes.)
 
-### Option 1: Chrome Web Store (recommended)
-
-Install the extension directly via the [Chrome Web Store](https://chromewebstore.google.com/detail/model-context-tool-inspec/gbpdfapgefenggkahomfgkhfehlcenpd).
-
-### Option 2: Install from source
+### Install from source
 
 1.  **Download the Source:**
     Clone this repository or download the source files into a directory.

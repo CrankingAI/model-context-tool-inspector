@@ -93,7 +93,8 @@ We may update this Privacy Policy from time to time. Any changes will be reflect
 
 ## 8. Open Source and Contact
 
-This Extension is open source under the Apache-2.0 license. You can inspect the source code and verify our privacy practices directly on GitHub:
+This Extension is open source under the Apache-2.0 license. This build is a DevPartners fork of the upstream project. You can inspect the source code and verify our privacy practices directly on GitHub:
 
-- **Repository:** [beaufortfrancois/model-context-tool-inspector](https://github.com/beaufortfrancois/model-context-tool-inspector)
+- **Repository (this fork):** [CrankingAI/model-context-tool-inspector](https://github.com/CrankingAI/model-context-tool-inspector)
+- **Upstream original:** [beaufortfrancois/model-context-tool-inspector](https://github.com/beaufortfrancois/model-context-tool-inspector)
 - **Issues & Inquiries:** If you have questions or feedback regarding this Privacy Policy, please open an issue in the repository.
