@@ -1,5 +1,7 @@
 # WebMCP - Model Context Tool Inspector (DevPartners)
 
+[![CI](https://github.com/CrankingAI/model-context-tool-inspector/actions/workflows/ci.yml/badge.svg)](https://github.com/CrankingAI/model-context-tool-inspector/actions/workflows/ci.yml)
+
 > **DevPartners fork.** This is a derivative of the upstream
 > [beaufortfrancois/model-context-tool-inspector](https://github.com/beaufortfrancois/model-context-tool-inspector),
 > extended with multi-provider LLM support (Microsoft Foundry / Azure OpenAI alongside Gemini)

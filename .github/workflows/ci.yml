@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            test/package-lock.json
+
+      # Builds js-genai.js via the postinstall script (which then removes
+      # node_modules again).
+      - name: Build js-genai.js
+        run: npm ci
+
+      - name: Install test dependencies
+        working-directory: test
+        run: npm ci
+
+      # Key the Chrome for Testing cache on the current stable build so a
+      # stable-channel bump downloads once and everything after hits the cache.
+      - name: Resolve Chrome for Testing build
+        id: chrome
+        working-directory: test
+        run: echo "buildId=$(node -e "import('@puppeteer/browsers').then(async (b) => console.log(await b.resolveBuildId('chrome', b.detectBrowserPlatform(), 'stable')))")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chrome for Testing
+        uses: actions/cache@v4
+        with:
+          path: test/.cache
+          key: chrome-${{ runner.os }}-${{ steps.chrome.outputs.buildId }}
+
+      - name: Run e2e tests
+        working-directory: test
+        run: npm test
