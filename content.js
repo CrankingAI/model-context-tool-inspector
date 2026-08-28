@@ -12,9 +12,11 @@ console.debug(`[WebMCP] Content script injected in ${window.location.href}`);
 // so the second copy is a no-op.
 var webmcpContentScriptLoaded;
 var timeout;
+var frameIdCache;
 
 if (!webmcpContentScriptLoaded) {
   webmcpContentScriptLoaded = true;
+  frameIdCache = new WeakMap();
 
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
 
@@ -123,6 +125,20 @@ async function listTools(fromOrigins) {
 }
 
 async function getFrameId(targetWindow) {
+  if (frameIdCache.has(targetWindow)) return frameIdCache.get(targetWindow);
+  // The postMessage relay can miss a beat (e.g. a slow service worker still
+  // injecting the responder); retry before reporting the frame as unknown.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const frameId = await requestFrameId(targetWindow);
+    if (frameId != null) {
+      frameIdCache.set(targetWindow, frameId);
+      return frameId;
+    }
+  }
+  return null;
+}
+
+async function requestFrameId(targetWindow) {
   await chrome.runtime.sendMessage({ action: 'INJECT_GET_FRAME_ID' });
   const promise = new Promise((resolve) => {
     let timeoutId;
