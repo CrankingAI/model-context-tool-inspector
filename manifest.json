@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "WebMCP - Model Context Tool Inspector (DevPartners)",
   "description": "Inspect, monitor, and execute WebMCP tools manually or with an LLM (Gemini, Microsoft Foundry / Azure OpenAI). A DevPartners fork.",
-  "version": "1.10.1",
+  "version": "1.10.2",
   "minimum_chrome_version": "150.0.7861.0",
   "permissions": ["sidePanel", "activeTab", "scripting", "webNavigation"],
   "host_permissions": ["<all_urls>"],
