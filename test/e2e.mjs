@@ -60,7 +60,34 @@ async function getChrome() {
   return browsers.computeExecutablePath({ browser: 'chrome', buildId, cacheDir });
 }
 
+const azureRequests = [];
 const server = http.createServer((req, res) => {
+  // Mock Foundry chat completions (Azure OpenAI /openai/v1 route and MAI
+  // /mai/v1 route): first round asks for a tool call, and once a tool result
+  // is in the transcript, answers with it.
+  if (req.method === 'POST' && /^\/(openai|mai)\/v1\/chat\/completions/.test(req.url)) {
+    let body = '';
+    req.on('data', (chunk) => (body += chunk));
+    req.on('end', () => {
+      const payload = JSON.parse(body);
+      azureRequests.push({ url: req.url, headers: req.headers, payload });
+      const toolMsg = payload.messages.findLast((m) => m.role === 'tool');
+      const message = toolMsg
+        ? { role: 'assistant', content: `Answer: ${JSON.parse(toolMsg.content).result}` }
+        : {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{
+              id: 'call_1',
+              type: 'function',
+              function: { name: '_0_add_numbers', arguments: '{"a":2,"b":40}' },
+            }],
+          };
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message }] }));
+    });
+    return;
+  }
   if (req.url.startsWith('/favicon')) {
     res.writeHead(204);
     res.end();
@@ -211,6 +238,56 @@ const newTab = await newTabPromise;
 await waitSidebar(() => /ORDER|Error/.test(document.getElementById('toolResults').textContent), 20000);
 check('cross-document result from new tab', (await toolResults()).includes('ORDER-12345'), `result="${await toolResults()}"`);
 await newTab.close();
+
+// AI loop against the mocked Foundry endpoint: switch provider in the
+// advanced menu, enter credentials in the dialog, send a prompt, and let the
+// "model" call a page tool.
+await sidebar.evaluate(() => { localStorage.suggestUserPrompt = 'false'; });
+await sidebar.click('#advancedBtn');
+await sidebar.click('input[name="provider"][value="azure"]');
+// Switching to an unconfigured provider opens the credentials dialog.
+await waitSidebar(() => document.getElementById('credentialsDialog').open);
+await sidebar.fill('#azureEndpointInput', BASE);
+await sidebar.fill('#azureDeploymentInput', 'test-deployment');
+await sidebar.fill('#azureApiKeyInput', 'test-key');
+await sidebar.click('#credentialsDialog button[value="save"]');
+await waitSidebar(() => !document.getElementById('promptBtn').disabled);
+const apiKeyBtnText = await sidebar.$eval('#apiKeyBtn', (el) => el.textContent);
+check('credentials button reflects provider', apiKeyBtnText === 'Update Microsoft Foundry credentials', apiKeyBtnText);
+
+await sidebar.fill('#userPromptText', 'What is 2 + 40?');
+await sidebar.click('#promptBtn');
+await waitSidebar(() => /Answer:|⚠️/.test(document.getElementById('promptResults').textContent), 15000);
+const promptLog = await sidebar.$eval('#promptResults', (el) => el.textContent);
+check('AI loop executes page tool', promptLog.includes('Tool "add_numbers" result: sum is 42'), promptLog);
+check('AI loop reports final answer', promptLog.includes('Answer: sum is 42'), promptLog);
+
+const azureFirst = azureRequests[0];
+check('azure request has api-key header', azureFirst?.headers['api-key'] === 'test-key');
+check('azure request has deployment as model', azureFirst?.payload.model === 'test-deployment');
+check(
+  'azure request declares page tools',
+  (azureFirst?.payload.tools || []).some((t) => t.function?.name === '_0_add_numbers'),
+  JSON.stringify(azureFirst?.payload.tools?.map((t) => t.function?.name)),
+);
+check('azure request has system message', azureFirst?.payload.messages[0]?.role === 'system');
+check('bare endpoint uses /openai/v1 route', azureFirst?.url === '/openai/v1/chat/completions', azureFirst?.url);
+
+// An endpoint that already names a /v1 route (MAI models) is used as-is.
+await sidebar.click('#apiKeyBtn');
+await waitSidebar(() => document.getElementById('credentialsDialog').open);
+await sidebar.fill('#azureEndpointInput', `${BASE}/mai/v1`);
+await sidebar.click('#credentialsDialog button[value="save"]');
+await sidebar.click('#resetBtn'); // clear the prompt log for a fresh wait
+await sidebar.fill('#userPromptText', 'And again?');
+await sidebar.click('#promptBtn');
+await waitSidebar(() => /Answer:|⚠️/.test(document.getElementById('promptResults').textContent), 15000);
+const maiLast = azureRequests.at(-1);
+check('MAI endpoint uses /mai/v1 route', maiLast?.url === '/mai/v1/chat/completions', maiLast?.url);
+check(
+  'MAI route completes the loop',
+  await sidebar.$eval('#promptResults', (el) => el.textContent.includes('Answer: sum is 42')),
+);
 
 // Page without tools shows the empty state
 await demo.bringToFront();

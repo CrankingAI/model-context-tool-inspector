@@ -25,7 +25,8 @@ The Extension processes data locally within your browser to provide its develope
 - **Tool Execution Data:** When you manually execute a tool or trigger tool execution via the AI assistant, the input parameters and execution results are passed directly between the extension and the web page/frame.
 - **Local Storage (`localStorage`):** The following configuration settings are stored locally on your machine within the browser's extension storage:
   - **Gemini API Key:** If you provide a Google Gemini API key to enable AI features, it is stored locally in `localStorage.apiKey`. It is never transmitted anywhere other than directly to Google's Gemini API endpoints.
-  - **Selected Model:** Your chosen Gemini model (e.g., `gemini-3.6-flash`) is saved in `localStorage.model`.
+  - **Microsoft Foundry / Azure OpenAI Credentials:** If you provide Microsoft Foundry (Azure OpenAI) credentials to enable AI features, they are stored locally in `localStorage.azureEndpoint`, `localStorage.azureDeployment`, and `localStorage.azureApiKey`. They are never transmitted anywhere other than directly to the Foundry endpoint you configured.
+  - **Selected Provider and Model:** Your chosen AI provider (`gemini` or `azure`) is saved in `localStorage.provider`, and your chosen Gemini model (e.g., `gemini-3.6-flash`) in `localStorage.model`.
   - **Prompt Suggestion Preference:** Your preference for automatic prompt generation is saved in `localStorage.suggestUserPrompt`.
 - **Clipboard Access:** The extension will only write data (such as tool definitions in JSON/ScriptToolConfig format or session debug traces) to your clipboard when you explicitly click the corresponding "Copy" buttons. The extension never reads from your clipboard.
 
@@ -45,6 +46,16 @@ When using these features:
 - This data transfer is subject to [Google's Privacy Policy](https://policies.google.com/privacy) and the [Google APIs Terms of Service / Generative AI Additional Terms of Service](https://ai.google.dev/terms).
 - If you do not provide an API key, no network requests to Google Gemini are made.
 
+### Microsoft Foundry / Azure OpenAI
+
+If and only if you provide Microsoft Foundry credentials (endpoint, deployment name, and API key), select Microsoft Foundry as the AI provider, and use the AI interaction features, the Extension communicates directly from your browser to the Foundry endpoint you configured (typically `https://<your-resource>.services.ai.azure.com` or `https://<your-resource>.openai.azure.com`).
+
+When using these features:
+
+- Your user prompt, available tool declarations (names, descriptions, schemas), and tool execution results are transmitted to your Foundry resource to process model responses and function calls.
+- This data transfer is subject to [Microsoft's Privacy Statement](https://privacy.microsoft.com/privacystatement) and the [Microsoft Product Terms](https://www.microsoft.com/licensing/terms) applicable to your Azure subscription.
+- If you do not provide Microsoft Foundry credentials, no network requests to Azure are made.
+
 ---
 
 ## 4. Permissions Used and Why
@@ -63,8 +74,8 @@ The Extension requests the following permissions in its `manifest.json`:
 
 ## 5. Data Retention and Security
 
-- All settings and configuration data remain in your browser's local storage and can be deleted at any time by updating/clearing the API key in the extension UI, resetting local storage, or uninstalling the extension.
-- Network communication with the Google Gemini API (when enabled) uses encrypted HTTPS/TLS connections.
+- All settings and configuration data remain in your browser's local storage and can be deleted at any time by updating/clearing the credentials in the extension UI, resetting local storage, or uninstalling the extension.
+- Network communication with the configured AI provider (when enabled) uses encrypted HTTPS/TLS connections.
 
 ---
 

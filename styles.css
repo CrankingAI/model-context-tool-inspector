@@ -301,6 +301,38 @@ dialog::backdrop {
   width: auto;
 }
 
+#credentialsDialog {
+  width: min(340px, 90vw);
+  padding: 12px;
+}
+
+#credentialsDialog label {
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
+#credentialsDialog input {
+  margin-top: 4px;
+}
+
+#credentialsDialog .menu-label {
+  padding: 0;
+}
+
+.dialog-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.dialog-hint {
+  font-size: 0.6875rem;
+  color: #6b7280;
+  line-height: 1.5;
+  margin: 10px 0 0;
+}
+
 @media (prefers-color-scheme: dark) {
   body {
     background-color: #121212;
@@ -338,6 +370,10 @@ dialog::backdrop {
   }
 
   .menu-label {
+    color: #a3a3a3;
+  }
+
+  .dialog-hint {
     color: #a3a3a3;
   }
 

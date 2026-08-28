@@ -43,32 +43,77 @@
       </div>
 
       <dialog id="advancedSection" popover autofocus>
-        <div class="menu-label">Gemini Model</div>
+        <div class="menu-label">AI Provider</div>
         <label class="model-option">
-          <input type="radio" name="model" value="gemini-3-flash-preview">
-          <span>Gemini 3 Flash Preview</span>
+          <input type="radio" name="provider" value="gemini">
+          <span>Google Gemini</span>
         </label>
         <label class="model-option">
-          <input type="radio" name="model" value="gemini-3.1-flash-lite">
-          <span>Gemini 3.1 Flash-Lite</span>
+          <input type="radio" name="provider" value="azure">
+          <span>Microsoft Foundry / Azure OpenAI</span>
         </label>
-        <label class="model-option">
-          <input type="radio" name="model" value="gemini-3.5-flash-lite">
-          <span>Gemini 3.5 Flash-Lite</span>
-        </label>
-        <label class="model-option">
-          <input type="radio" name="model" value="gemini-3.5-flash">
-          <span>Gemini 3.5 Flash</span>
-        </label>
-        <label class="model-option">
-          <input type="radio" name="model" value="gemini-3.6-flash">
-          <span>Gemini 3.6 Flash</span>
-        </label>
+        <div id="geminiModelSection">
+          <div class="menu-label">Gemini Model</div>
+          <label class="model-option">
+            <input type="radio" name="model" value="gemini-3-flash-preview">
+            <span>Gemini 3 Flash Preview</span>
+          </label>
+          <label class="model-option">
+            <input type="radio" name="model" value="gemini-3.1-flash-lite">
+            <span>Gemini 3.1 Flash-Lite</span>
+          </label>
+          <label class="model-option">
+            <input type="radio" name="model" value="gemini-3.5-flash-lite">
+            <span>Gemini 3.5 Flash-Lite</span>
+          </label>
+          <label class="model-option">
+            <input type="radio" name="model" value="gemini-3.5-flash">
+            <span>Gemini 3.5 Flash</span>
+          </label>
+          <label class="model-option">
+            <input type="radio" name="model" value="gemini-3.6-flash">
+            <span>Gemini 3.6 Flash</span>
+          </label>
+        </div>
         <div class="menu-label">Advanced Options</div>
         <label class="model-option">
           <input type="checkbox" id="suggestUserPromptCheckbox">
           <span>Suggest user prompt</span>
         </label>
+      </dialog>
+
+      <dialog id="credentialsDialog">
+        <form method="dialog">
+          <div class="menu-label" id="credentialsTitle">Gemini API Key</div>
+          <div id="geminiFields">
+            <label>API key
+              <input type="password" id="geminiApiKeyInput" autocomplete="off">
+            </label>
+          </div>
+          <div id="azureFields" class="is-hidden">
+            <label>Endpoint
+              <input type="text" id="azureEndpointInput" autocomplete="off"
+                     placeholder="https://myresource.services.ai.azure.com">
+            </label>
+            <label>Deployment name
+              <input type="text" id="azureDeploymentInput" autocomplete="off"
+                     placeholder="gpt-4o">
+            </label>
+            <label>API key
+              <input type="password" id="azureApiKeyInput" autocomplete="off">
+            </label>
+            <p class="dialog-hint">
+              Bare endpoints use the OpenAI-compatible <code>/openai/v1</code> route
+              (Azure OpenAI, DeepSeek, Grok, Llama…). For Microsoft MAI models such as
+              MAI-Thinking-1, append <code>/mai/v1</code> to the endpoint. The deployment
+              must support function calling.
+            </p>
+          </div>
+          <div class="dialog-buttons">
+            <button value="cancel" class="secondary" formnovalidate>Cancel</button>
+            <button value="save">Save</button>
+          </div>
+        </form>
       </dialog>
 
       <div class="form-group">

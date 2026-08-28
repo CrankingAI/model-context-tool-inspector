@@ -1,6 +1,6 @@
 # WebMCP - Model Context Tool Inspector
 
-A Chrome Extension that allows developers to inspect, monitor, and execute WebMCP tools manually or with Gemini.
+A Chrome Extension that allows developers to inspect, monitor, and execute WebMCP tools manually or with an LLM (Google Gemini or Microsoft Foundry, including Azure OpenAI).
 
 ## Prerequisites
 
@@ -48,6 +48,17 @@ Install the extension directly via the [Chrome Web Store](https://chromewebstore
     * **Input Arguments:** Enter the arguments for the tool in the text area.
         * *Note:* The input must be valid JSON (e.g., `{"text": "hello world"}`).
     * Click **Execute Tool**.
+
+5.  **Exercise Tools with an LLM (optional):**
+    * Pick an AI provider (Google Gemini or Microsoft Foundry / Azure OpenAI) in the **︙** menu next to the User Prompt field.
+    * Set your credentials with the corresponding button:
+        * **Gemini:** an [API key](https://aistudio.google.com/apikey); pick the model in the **︙** menu.
+        * **Microsoft Foundry / Azure OpenAI:** your resource endpoint, the name of a model deployment that supports function calling, and an API key. Any Foundry chat model that speaks the OpenAI chat completions syntax works:
+            * *Azure OpenAI* deployments (e.g., `gpt-4o`): use the bare resource endpoint, e.g. `https://myresource.openai.azure.com` or `https://myresource.services.ai.azure.com`.
+            * *Other Foundry models sold by Azure* with function calling, such as DeepSeek, Grok, or Llama: use the bare resource endpoint too (they share the `/openai/v1` route).
+            * *Microsoft MAI frontier models* (e.g., `MAI-Thinking-1`): append the MAI route to the endpoint, e.g. `https://myresource.services.ai.azure.com/mai/v1`.
+            * Endpoints already ending in a `/v1` route or in `/chat/completions` are used as-is, so any OpenAI-compatible endpoint works. Claude on Foundry is *not* supported (it uses the Anthropic-native API).
+    * Type a prompt (or accept a suggested one) and click **Send**. The model can then call the page's WebMCP tools to answer.
 
 ## Disclaimer
 

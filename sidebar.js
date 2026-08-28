@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GoogleGenAI } from './js-genai.js';
+import { createProvider } from './providers.js';
 import { getAllFrameOrigins } from './utils.js';
 
 const statusDiv = document.getElementById('status');
@@ -24,6 +24,15 @@ const apiKeyBtn = document.getElementById('apiKeyBtn');
 const promptResults = document.getElementById('promptResults');
 const advancedSection = document.getElementById('advancedSection');
 const suggestUserPromptCheckbox = document.getElementById('suggestUserPromptCheckbox');
+const geminiModelSection = document.getElementById('geminiModelSection');
+const credentialsDialog = document.getElementById('credentialsDialog');
+const credentialsTitle = document.getElementById('credentialsTitle');
+const geminiFields = document.getElementById('geminiFields');
+const azureFields = document.getElementById('azureFields');
+const geminiApiKeyInput = document.getElementById('geminiApiKeyInput');
+const azureEndpointInput = document.getElementById('azureEndpointInput');
+const azureDeploymentInput = document.getElementById('azureDeploymentInput');
+const azureApiKeyInput = document.getElementById('azureApiKeyInput');
 
 // First, request list of tools from content script living in top-level frame.
 (async () => {
@@ -155,15 +164,18 @@ copyAsJSON.onclick = async () => {
 
 // Interact with the page
 
-let genAI, chat;
+let provider, chat;
 
-async function initGenAI() {
+async function initProvider() {
   let env;
   try {
     // Try load .env.json if present.
     env = (await import('./.env.json', { with: { type: 'json' } })).default;
   } catch {}
   if (env?.apiKey) localStorage.apiKey ??= env.apiKey;
+  if (env?.azureEndpoint) localStorage.azureEndpoint ??= env.azureEndpoint;
+  if (env?.azureDeployment) localStorage.azureDeployment ??= env.azureDeployment;
+  if (env?.azureApiKey) localStorage.azureApiKey ??= env.azureApiKey;
   if (localStorage.model === 'gemini-2.5-flash') {
     localStorage.model = 'gemini-3-flash-preview';
   }
@@ -171,14 +183,21 @@ async function initGenAI() {
     localStorage.model = 'gemini-3.1-flash-lite';
   }
   localStorage.model ??= env?.model || 'gemini-3.6-flash';
-  genAI = localStorage.apiKey ? new GoogleGenAI({ apiKey: localStorage.apiKey }) : undefined;
-  promptBtn.disabled = !localStorage.apiKey;
-  resetBtn.disabled = !localStorage.apiKey;
-  apiKeyBtn.textContent = localStorage.apiKey ? 'Update Gemini API key' : 'Set Gemini API key';
+  localStorage.provider ??= env?.provider || 'gemini';
+
+  provider = createProvider(localStorage);
+  promptBtn.disabled = !provider.isConfigured;
+  resetBtn.disabled = !provider.isConfigured;
+  apiKeyBtn.textContent = `${provider.isConfigured ? 'Update' : 'Set'} ${provider.label} ${provider.credentialsNoun}`;
+
+  document.querySelectorAll('input[name="provider"]').forEach((radio) => {
+    radio.checked = radio.value === localStorage.provider;
+  });
+  geminiModelSection.classList.toggle('is-hidden', localStorage.provider !== 'gemini');
 
   suggestUserPromptCheckbox.checked = localStorage.suggestUserPrompt !== 'false';
 }
-await initGenAI();
+await initProvider();
 
 document.querySelectorAll('input[name="model"]').forEach((radio) => {
   radio.checked = radio.value === localStorage.model;
@@ -186,6 +205,18 @@ document.querySelectorAll('input[name="model"]').forEach((radio) => {
     localStorage.model = radio.value;
     chat = undefined;
     advancedSection.hidePopover();
+  };
+});
+
+document.querySelectorAll('input[name="provider"]').forEach((radio) => {
+  radio.onclick = async () => {
+    localStorage.provider = radio.value;
+    chat = undefined;
+    advancedSection.hidePopover();
+    await initProvider();
+    // Jump straight to credentials entry when the provider isn't set up yet.
+    if (!provider.isConfigured) apiKeyBtn.click();
+    else suggestUserPrompt();
   };
 });
 
@@ -197,31 +228,28 @@ suggestUserPromptCheckbox.onchange = () => {
 
 async function suggestUserPrompt() {
   if (localStorage.suggestUserPrompt === 'false') return;
-  if (currentTools.length == 0 || !genAI || userPromptText.value !== lastSuggestedUserPrompt)
+  if (!currentTools?.length || !provider.isConfigured || userPromptText.value !== lastSuggestedUserPrompt)
     return;
   const userPromptId = ++userPromptPendingId;
-  const response = await genAI.models.generateContent({
-    model: localStorage.model,
-    contents: [
-      '**Context:**',
-      `Today's date is: ${getFormattedDate()}`,
-      '**Tool Rules:**',
-      '1. **Bank Transaction Filter:** Use **PAST** dates only (e.g., "last month," "December 15th," "yesterday").',
-      '2. **Flight Search:** Use **FUTURE** dates only (e.g., "next week," "February 15th").',
-      '3. **Accommodation Search:** Use **FUTURE** dates only (e.g., "next weekend," "March 15th").',
-      '**Task:**',
-      'Generate one natural user query for a range of tools below, ideally chaining them together.',
-      'Ensure the date makes sense relative to today.',
-      'Output the query text only.',
-      '**Tools:**',
-      JSON.stringify(currentTools),
-    ],
-  });
+  const suggestion = await provider.generateText([
+    '**Context:**',
+    `Today's date is: ${getFormattedDate()}`,
+    '**Tool Rules:**',
+    '1. **Bank Transaction Filter:** Use **PAST** dates only (e.g., "last month," "December 15th," "yesterday").',
+    '2. **Flight Search:** Use **FUTURE** dates only (e.g., "next week," "February 15th").',
+    '3. **Accommodation Search:** Use **FUTURE** dates only (e.g., "next weekend," "March 15th").',
+    '**Task:**',
+    'Generate one natural user query for a range of tools below, ideally chaining them together.',
+    'Ensure the date makes sense relative to today.',
+    'Output the query text only.',
+    '**Tools:**',
+    JSON.stringify(currentTools),
+  ]);
   if (userPromptId !== userPromptPendingId || userPromptText.value !== lastSuggestedUserPrompt)
     return;
-  lastSuggestedUserPrompt = response.text;
+  lastSuggestedUserPrompt = suggestion;
   userPromptText.value = '';
-  for (const chunk of response.text) {
+  for (const chunk of suggestion) {
     await new Promise((r) => requestAnimationFrame(r));
     userPromptText.value += chunk;
   }
@@ -248,51 +276,48 @@ let trace = [];
 async function promptAI() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-  chat ??= genAI.chats.create({ model: localStorage.model });
+  chat ??= provider.createChat();
 
   const message = userPromptText.value;
   userPromptText.value = '';
   lastSuggestedUserPrompt = '';
   promptResults.textContent += `User prompt: "${message}"\n`;
-  const sendMessageParams = { message, config: getConfig() };
+  const sendMessageParams = { message, ...getConfig() };
   trace.push({ userPrompt: sendMessageParams });
-  let currentResult = await chat.sendMessage(sendMessageParams);
+  let currentResult = await chat.send(sendMessageParams);
   let finalResponseGiven = false;
 
   while (!finalResponseGiven) {
-    const response = currentResult;
+    const { text, toolCalls, response } = currentResult;
     trace.push({ response });
-    const functionCalls = response.functionCalls || [];
 
-    if (functionCalls.length === 0) {
-      if (!response.text) {
-        logPrompt(`⚠️ AI response has no text: ${JSON.stringify(response.candidates)}\n`);
+    if (toolCalls.length === 0) {
+      if (!text) {
+        logPrompt(`⚠️ AI response has no text: ${JSON.stringify(response)}\n`);
       } else {
-        logPrompt(`AI result: ${response.text?.trim()}\n`);
+        logPrompt(`AI result: ${text.trim()}\n`);
       }
       finalResponseGiven = true;
     } else {
-      const toolResponses = [];
-      for (const { name: toolName, args } of functionCalls) {
+      const toolResults = [];
+      for (const { id, name: toolName, args } of toolCalls) {
         let [frameId, name] = toolName.split(/_(.*)/s)[1].split(/_(.*)/s);
         frameId = parseInt(frameId);
         const inputArgs = JSON.stringify(args);
         logPrompt(`AI calling tool "${name}" with ${inputArgs}`);
         try {
           const result = await executeTool(tab.id, name, inputArgs, frameId);
-          toolResponses.push({ functionResponse: { name: toolName, response: { result } } });
+          toolResults.push({ id, name: toolName, result });
           logPrompt(`Tool "${name}" result: ${result}`);
         } catch (e) {
           logPrompt(`⚠️ Error executing tool "${name}": ${e.message}`);
-          toolResponses.push({
-            functionResponse: { name: toolName, response: { error: e.message } },
-          });
+          toolResults.push({ id, name: toolName, error: e.message });
         }
       }
 
-      const sendMessageParams = { message: toolResponses, config: getConfig() };
+      const sendMessageParams = { toolResults, ...getConfig() };
       trace.push({ userPrompt: sendMessageParams });
-      currentResult = await chat.sendMessage(sendMessageParams);
+      currentResult = await chat.send(sendMessageParams);
     }
   }
 }
@@ -306,11 +331,30 @@ resetBtn.onclick = () => {
   suggestUserPrompt();
 };
 
-apiKeyBtn.onclick = async () => {
-  const apiKey = prompt('Enter Gemini API key', localStorage.apiKey);
-  if (apiKey == null) return;
-  localStorage.apiKey = apiKey;
-  await initGenAI();
+apiKeyBtn.onclick = () => {
+  const isAzure = localStorage.provider === 'azure';
+  credentialsTitle.textContent = isAzure ? 'Microsoft Foundry Credentials' : 'Gemini API Key';
+  geminiFields.classList.toggle('is-hidden', isAzure);
+  azureFields.classList.toggle('is-hidden', !isAzure);
+  geminiApiKeyInput.value = localStorage.apiKey || '';
+  azureEndpointInput.value = localStorage.azureEndpoint || '';
+  azureDeploymentInput.value = localStorage.azureDeployment || '';
+  azureApiKeyInput.value = localStorage.azureApiKey || '';
+  credentialsDialog.returnValue = '';
+  credentialsDialog.showModal();
+};
+
+credentialsDialog.onclose = async () => {
+  if (credentialsDialog.returnValue !== 'save') return;
+  if (localStorage.provider === 'azure') {
+    localStorage.azureEndpoint = azureEndpointInput.value.trim();
+    localStorage.azureDeployment = azureDeploymentInput.value.trim();
+    localStorage.azureApiKey = azureApiKeyInput.value.trim();
+  } else {
+    localStorage.apiKey = geminiApiKeyInput.value.trim();
+  }
+  chat = undefined;
+  await initProvider();
   suggestUserPrompt();
 };
 
@@ -425,16 +469,16 @@ function getConfig() {
     'CRITICAL RULE: Do not try to use other tools than the available ones.',
   ];
 
-  const functionDeclarations = currentTools.map((tool) => {
+  const tools = currentTools.map((tool) => {
     return {
       name: `_${tool.frameId}_${tool.name}`,
       description: tool.description,
-      parametersJsonSchema: tool.inputSchema
+      parameters: tool.inputSchema
         ? JSON.parse(tool.inputSchema)
         : { type: 'object', properties: {} },
     };
   });
-  return { systemInstruction, tools: [{ functionDeclarations }] };
+  return { systemInstruction, tools };
 }
 
 function generateTemplateFromSchema(schema) {
