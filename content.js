@@ -5,7 +5,33 @@
 
 console.debug(`[WebMCP] Content script injected in ${window.location.href}`);
 
-chrome.runtime.onMessage.addListener((message, _, reply) => {
+// This file can be evaluated twice in the same frame: once as the manifest
+// content script and once injected by background.js at install time into tabs
+// that were already loading. Only var and function declarations are
+// redeclaration-safe at the top level, and all side effects are guarded below
+// so the second copy is a no-op.
+var webmcpContentScriptLoaded;
+var timeout;
+
+if (!webmcpContentScriptLoaded) {
+  webmcpContentScriptLoaded = true;
+
+  chrome.runtime.onMessage.addListener(onRuntimeMessage);
+
+  window.addEventListener('toolactivated', ({ toolName }) => {
+    console.debug(`[WebMCP] Tool "${toolName}" started execution.`);
+  });
+
+  window.addEventListener('toolcancel', ({ toolName }) => {
+    console.debug(`[WebMCP] Tool "${toolName}" execution is cancelled.`);
+  });
+
+  if (window === window.top) {
+    chrome.runtime.sendMessage({ type: 'contentScriptReady' }).catch(() => {});
+  }
+}
+
+function onRuntimeMessage(message, _, reply) {
   const { action, name, inputArgs, fromOrigins } = message;
   try {
     if (!document.modelContext) {
@@ -70,9 +96,8 @@ chrome.runtime.onMessage.addListener((message, _, reply) => {
   } catch ({ message }) {
     chrome.runtime.sendMessage({ message });
   }
-});
+}
 
-let timeout;
 function debouncedListTools(fromOrigins) {
   clearTimeout(timeout);
   timeout = setTimeout(() => listTools(fromOrigins), 100);
@@ -116,16 +141,4 @@ async function getFrameId(targetWindow) {
   });
   targetWindow.postMessage({ action: 'GET_FRAME_ID' }, '*');
   return promise;
-}
-
-window.addEventListener('toolactivated', ({ toolName }) => {
-  console.debug(`[WebMCP] Tool "${toolName}" started execution.`);
-});
-
-window.addEventListener('toolcancel', ({ toolName }) => {
-  console.debug(`[WebMCP] Tool "${toolName}" execution is cancelled.`);
-});
-
-if (window === window.top) {
-  chrome.runtime.sendMessage({ type: 'contentScriptReady' }).catch(() => {});
 }
