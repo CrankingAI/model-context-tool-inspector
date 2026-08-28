@@ -13,6 +13,7 @@ console.debug(`[WebMCP] Content script injected in ${window.location.href}`);
 var webmcpContentScriptLoaded;
 var timeout;
 var frameIdCache;
+var toolChangeListenerInstalled;
 
 if (!webmcpContentScriptLoaded) {
   webmcpContentScriptLoaded = true;
@@ -41,7 +42,7 @@ function onRuntimeMessage(message, _, reply) {
     }
     if (action == 'LIST_TOOLS') {
       debouncedListTools(fromOrigins);
-      document.modelContext.ontoolchange = debouncedListTools.bind(null, fromOrigins);
+      installToolChangeListener();
     }
     if (action == 'EXECUTE_TOOL') {
       console.debug(`[WebMCP] Execute tool "${name}" with ${inputArgs} in ${window.location.href}`);
@@ -100,14 +101,47 @@ function onRuntimeMessage(message, _, reply) {
   }
 }
 
+// Refresh the tool list whenever the page's tool registry changes. Prefer
+// addEventListener over assigning ontoolchange: it doesn't compete for the
+// single handler slot, so we never have to rely on how the slot is scoped
+// between worlds (in current Chrome builds the isolated world gets its own,
+// so page scripts can't actually clobber ours — addEventListener just avoids
+// depending on that). Fall back to the property only when ModelContext isn't
+// an EventTarget in this build.
+function installToolChangeListener() {
+  if (toolChangeListenerInstalled) return;
+  toolChangeListenerInstalled = true;
+  if (typeof document.modelContext.addEventListener === 'function') {
+    document.modelContext.addEventListener('toolchange', () => debouncedListTools());
+  } else {
+    document.modelContext.ontoolchange = () => debouncedListTools();
+  }
+}
+
 function debouncedListTools(fromOrigins) {
   clearTimeout(timeout);
   timeout = setTimeout(() => listTools(fromOrigins), 100);
 }
 
 async function listTools(fromOrigins) {
+  // toolchange refreshes don't carry an origins list, and one bound at
+  // LIST_TOOLS time goes stale when frames are added or removed later — ask
+  // the background for the tab's current frame origins instead.
+  if (!fromOrigins) {
+    try {
+      fromOrigins = await chrome.runtime.sendMessage({
+        type: 'internal',
+        action: 'GET_FRAME_ORIGINS',
+      });
+    } catch {
+      // Background unreachable; fall through to an unfiltered getTools().
+    }
+  }
   let tools = [];
-  for (const tool of await document.modelContext.getTools({ fromOrigins })) {
+  const registered = fromOrigins
+    ? await document.modelContext.getTools({ fromOrigins })
+    : await document.modelContext.getTools();
+  for (const tool of registered) {
     const frameId = tool.window == window ? 0 : await getFrameId(tool.window);
     const inputSchema =
       typeof tool.inputSchema === 'string' ? tool.inputSchema : JSON.stringify(tool.inputSchema);

@@ -202,6 +202,31 @@ check('lists iframe tool with frameId', optionText.some((t) => t.includes('echo_
 const badge = await sw.evaluate(async (tabId) => chrome.action.getBadgeText({ tabId }), demoTabId);
 check('badge shows tool count', badge === '6', `badge="${badge}"`);
 
+// The only test that exercises a toolchange-driven refresh (every other
+// refresh here rides a navigation event). The page also claims its own
+// ontoolchange handler first; that doesn't disturb the content script today
+// (each world has its own handler slot in current Chrome builds, and the
+// content script listens via addEventListener anyway), so it's just a cheap
+// guard kept in place.
+await demo.evaluate(() => {
+  document.modelContext.ontoolchange = () => {};
+  document.modelContext.registerTool({
+    name: 'late_tool',
+    description: 'Registered after the initial tool listing.',
+    inputSchema: { type: 'object', properties: {} },
+    async execute() {
+      return 'late tool ran';
+    },
+  });
+});
+await waitSidebar(() => document.querySelectorAll('#toolNames option').length >= 7);
+check(
+  'toolchange refresh lists late-registered tools',
+  (await sidebar.$$eval('#toolNames option', (els) => els.map((e) => e.textContent))).some((t) =>
+    t.includes('late_tool'),
+  ),
+);
+
 // Script tool, fast path
 await demo.bringToFront();
 await runTool('add_numbers', { a: 2, b: 3 });

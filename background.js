@@ -39,6 +39,12 @@ async function updateBadge(tabId) {
 }
 
 chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendResponse) => {
+  // Fresh frame origins for a toolchange-driven refresh (the message carries
+  // type: 'internal' so the sidebar's listener ignores it).
+  if (action == 'GET_FRAME_ORIGINS') {
+    getAllFrameOrigins(tab.id).then(sendResponse);
+    return true;
+  }
   if (action == 'INJECT_GET_FRAME_ID') {
     chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: true },
