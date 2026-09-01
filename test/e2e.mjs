@@ -198,8 +198,15 @@ for (const name of ['add_numbers', 'go_checkout', 'submit_order', 'open_report',
 }
 check('lists iframe tool with frameId', optionText.some((t) => t.includes('echo_frame') && /\(\d+\)/.test(t)), optionText.find((t) => t.includes('echo_frame')) || 'missing');
 
-// Badge shows the tool count on the demo tab
-const badge = await sw.evaluate(async (tabId) => chrome.action.getBadgeText({ tabId }), demoTabId);
+// Badge shows the tool count on the demo tab. Polled: a late tabs.onUpdated
+// or webNavigation event clears the badge and re-requests the tool list, so a
+// single read can catch the cleared window on a slow machine.
+let badge;
+for (let i = 0; i < 50; i++) {
+  badge = await sw.evaluate(async (tabId) => chrome.action.getBadgeText({ tabId }), demoTabId);
+  if (badge === '6') break;
+  await new Promise((r) => setTimeout(r, 100));
+}
 check('badge shows tool count', badge === '6', `badge="${badge}"`);
 
 // The only test that exercises a toolchange-driven refresh (every other
