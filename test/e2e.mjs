@@ -332,6 +332,12 @@ await setFoundryEndpoint(`${BASE}/api/projects/demo-project`);
 await promptRoundTrip('Once more?');
 check('project endpoint uses /openai/v1 route', azureRequests.at(-1)?.url === '/openai/v1/chat/completions', azureRequests.at(-1)?.url);
 
+// A Responses API URL (as handed out by the Foundry portal) shares its base
+// with chat completions.
+await setFoundryEndpoint(`${BASE}/openai/v1/responses`);
+await promptRoundTrip('Responses URL?');
+check('responses URL uses /openai/v1 route', azureRequests.at(-1)?.url === '/openai/v1/chat/completions', azureRequests.at(-1)?.url);
+
 // A full …/chat/completions URL is used verbatim.
 await setFoundryEndpoint(`${BASE}/mai/v1/chat/completions`);
 await promptRoundTrip('Verbatim?');

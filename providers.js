@@ -87,9 +87,10 @@ function createFoundryProvider({ azureEndpoint, azureDeployment, azureApiKey }) 
   // …cognitiveservices.azure.com), which gets the OpenAI-compatible /openai/v1
   // route; a Foundry project endpoint (…/api/projects/<name>), which serves
   // inference at the resource root; an endpoint already naming a /v1 API route
-  // (such as /mai/v1 for MAI models); or a full …/chat/completions URL, kept
-  // verbatim — query string included, so legacy deployment URLs with
-  // ?api-version=… work.
+  // (such as /mai/v1 for MAI models); a Responses API URL (…/openai/v1/responses),
+  // which the Foundry portal hands out and which shares a base with chat
+  // completions; or a full …/chat/completions URL, kept verbatim — query
+  // string included, so legacy deployment URLs with ?api-version=… work.
   function chatCompletionsUrl() {
     let raw = azureEndpoint.trim();
     if (!/^https?:\/\//i.test(raw)) raw = `https://${raw}`;
@@ -97,6 +98,7 @@ function createFoundryProvider({ azureEndpoint, azureDeployment, azureApiKey }) 
     if (url.pathname.replace(/\/+$/, '').endsWith('/chat/completions')) return url.href;
     let base = (url.origin + url.pathname).replace(/\/+$/, '');
     base = base.replace(/\/api\/projects\/[^/]+$/, '');
+    base = base.replace(/\/responses$/, '');
     if (!/\/v1$/.test(base)) base += '/openai/v1';
     return `${base}/chat/completions`;
   }
