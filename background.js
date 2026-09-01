@@ -21,7 +21,11 @@ chrome.runtime.onInstalled.addListener(async () => {
   });
 });
 
-// Update badge text with the number of tools per tab.
+// Update badge text (tool count) and icon color per tab; the red icon
+// variants mark a page with registered WebMCP tools.
+const DEFAULT_ICON = { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png' };
+const ACTIVE_ICON = { 16: 'icons/icon16-active.png', 32: 'icons/icon32-active.png', 48: 'icons/icon48-active.png', 128: 'icons/icon128-active.png' };
+
 chrome.tabs.onActivated.addListener(({ tabId }) => updateBadge(tabId));
 chrome.tabs.onUpdated.addListener((tabId) => updateBadge(tabId));
 chrome.webNavigation.onCompleted.addListener(({ tabId }) => updateBadge(tabId));
@@ -30,6 +34,7 @@ async function updateBadge(tabId) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab?.id !== tabId) return;
   chrome.action.setBadgeText({ text: '', tabId });
+  chrome.action.setIcon({ tabId, path: DEFAULT_ICON });
   chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
   const fromOrigins = await getAllFrameOrigins(tab.id);
   const message = { action: 'LIST_TOOLS', fromOrigins };
@@ -59,6 +64,7 @@ chrome.runtime.onMessage.addListener(({ action, tools }, { tab, frameId }, sendR
   if (tools !== undefined) {
     const text = tools.length ? `${tools.length}` : '';
     chrome.action.setBadgeText({ text, tabId: tab.id });
+    chrome.action.setIcon({ tabId: tab.id, path: tools.length ? ACTIVE_ICON : DEFAULT_ICON });
   }
 });
 
